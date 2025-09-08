@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "setuptools_scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "k230-flash"
+dynamic = ["version"]                      # The version is automatically obtained from the Git tag by setuptools_scm
+description = "K230 flash tool for command-line usage and GUI"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+authors = [
+    { name = "kendryte747", email = "kendryte747@gmail.com" },
+    { name = "Jimmy Huang", email = "huangzhenming@canaan-creative.com" }
+]
+urls = { "Source" = "https://github.com/kendryte/k230_flash_py" }
+
+dependencies = [
+    "loguru",
+    "pyusb",
+]
+
+[project.scripts]
+"k230-flash" = "k230_flash.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}                  # Specify the source code directory
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+k230_flash = ["loaders/*.bin"]       # Include your loaders/*.bin files
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "node-and-date"

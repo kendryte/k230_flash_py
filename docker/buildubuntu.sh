@@ -1,0 +1,1 @@
+docker build -f Dockerfile.ubuntu2204 -t ubuntu_2204_python311:1.0 .

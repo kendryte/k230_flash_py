@@ -1,0 +1,335 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  python-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Build package
+        run: |
+          python -m build
+          ls -al dist/
+
+      - name: Determine version1
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME}-$(git rev-parse --short HEAD)"
+          else
+            VERSION="${GITHUB_REF_NAME}-$(git rev-parse --short HEAD)"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION=$VERSION"
+
+      - name: Zip1 python package
+        run: |
+          mkdir -p upload
+          zip -j upload/k230-flash-${{ env.VERSION }}.zip dist/*
+
+      - name: Upload Python Release Asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: upload/k230-flash-${{ env.VERSION }}.zip
+          prerelease: true
+
+      - name: Upload Python Nightly Artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: k230-flash-${{ env.VERSION }}
+          path: upload/k230-flash-${{ env.VERSION }}.zip
+
+  gui-release:
+    strategy:
+      matrix:
+        include:
+        - os: ubuntu-22.04
+          label: ubuntu
+          runner: ubuntu-22.04
+        - os: windows-2022
+          label: windows
+          runner: windows-2022
+        - os: macos-13
+          label: macos
+          runner: macos-13
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install UPX / 7zip (Windows only)
+        if: matrix.label == 'windows'
+        run: |
+          choco install upx -y
+          choco install 7zip -y
+
+      - name: Install macOS dependencies
+        if: matrix.label == 'macos'
+        run: |
+          brew update
+          brew install libusb
+
+
+      # Determine version
+      - name: Determine version
+        id: version
+        run: |
+          git config --global --add safe.directory $GITHUB_WORKSPACE
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME}-$(git rev-parse --short HEAD)"
+          else
+            VERSION="${GITHUB_REF_NAME}-$(git rev-parse --short HEAD)"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION=$VERSION"
+
+      - name: Build GUI with PyInstaller (Windows)
+        if: matrix.label == 'windows'
+        env:
+          VERSION: ${{ env.VERSION }}
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: 1
+        run: |
+          chcp 65001  # 设置控制台为 UTF-8
+          pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+          pip install -e .
+          cd src/gui
+          # Create version.txt file
+          echo "$env:VERSION" | Out-File -FilePath "version.txt" -Encoding utf8 -NoNewline
+          Write-Host "Created version.txt with version: $env:VERSION"
+          python build_windows.py
+        shell: pwsh
+
+      - name: Build GUI with PyInstaller (macOS)
+        if: matrix.label == 'macos'
+        env:
+          VERSION: ${{ env.VERSION }}
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+          pip install -e .
+          cd src/gui
+          # Create version.txt file
+          echo "$VERSION" > version.txt
+          echo "Created version.txt with version: $VERSION"
+          python build_macos.py
+
+      - name: Package GUI (Linux with Docker & FUSE)
+        if: matrix.label == 'ubuntu'
+        env:
+          VERSION: ${{ env.VERSION }}
+        run: |
+          # 在主机上创建upload目录并设置权限
+          mkdir -p upload
+          chmod 777 upload
+          
+          # 在Docker容器中执行构建
+          docker run --rm \
+            --privileged \
+            --device /dev/fuse \
+            --user root \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            ubuntu:20.04 \
+            bash -c '
+              export DEBIAN_FRONTEND=noninteractive
+              export TZ=Etc/UTC
+              ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime
+
+              apt-get update
+              apt-get install -y \
+                software-properties-common \
+                wget curl git build-essential \
+                libfuse2 fuse \
+                libgl1-mesa-dev libvulkan-dev \
+                libssl-dev libudev-dev \
+                file apt-utils ca-certificates unzip \
+                gnupg lsb-release \
+                shared-mime-info \
+                libusb-1.0-0 \
+                libusb-1.0-0-dev \
+                libusb-dev \
+                libgdk-pixbuf2.0-0 libgdk-pixbuf2.0-bin libgdk-pixbuf2.0-dev
+
+              # Python 3.11
+              add-apt-repository ppa:deadsnakes/ppa -y
+              apt-get update
+              apt-get install -y python3.11 python3.11-venv python3.11-dev python3.11-distutils
+              curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
+
+              # 将 python3 指向 3.11（保留 3.8 作为备选）
+              update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1
+              update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 2
+              update-alternatives --set python3 /usr/bin/python3.11
+
+              # pip & 构建工具
+              python3 -m pip install --upgrade pip setuptools wheel
+
+              # PySide6 + PyInstaller
+              python3 -m pip install PySide6 pyinstaller
+
+              pip install --upgrade pip
+              pip install pyinstaller
+              pip install -r requirements.txt
+              pip install -e .
+
+              wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /usr/local/bin/appimagetool
+              chmod +x /usr/local/bin/appimagetool
+
+              # 验证和确保upload目录存在
+              echo "检查upload目录状态:"
+              ls -la /workspace/ | grep upload || echo "upload目录不存在"
+              
+              # 在容器内确保upload目录存在并有正确权限
+              mkdir -p /workspace/upload
+              chmod 777 /workspace/upload
+              echo "容器内upload目录创建完成:"
+              ls -la /workspace/upload
+
+              # 构建 GUI
+              cd src/gui
+              echo "当前工作目录: $(pwd)"
+              
+              # Create version.txt file
+              echo "Creating version.txt file..."
+              if [ -n "'${{ env.VERSION }}'" ]; then
+                echo "'${{ env.VERSION }}'" > version.txt
+                echo "Created version.txt with version: '${{ env.VERSION }}'"
+              else
+                echo "dev" > version.txt
+                echo "Created version.txt with default version: dev"
+              fi
+              
+              pyinstaller --clean -y k230_flash_gui.spec
+
+              # 验证PyInstaller构建输出
+              if [ ! -d "dist/k230_flash_gui" ]; then
+                echo "错误: PyInstaller构建失败，dist目录不存在"
+                exit 1
+              fi
+              echo "PyInstaller构建成功，输出内容:"
+              ls -la dist/k230_flash_gui/ | head -10
+
+              # 创建 AppDir
+              APPDIR=$(pwd)/AppDir
+              rm -rf $APPDIR
+              mkdir -p $APPDIR/usr/bin
+              cp -r dist/k230_flash_gui/* $APPDIR/usr/bin/
+              
+              # 检查并复制AppDir配置文件
+              if [ -d "package/AppDir" ]; then
+                cp -r package/AppDir/* $APPDIR/
+                echo "复制package/AppDir配置文件成功"
+              else
+                echo "警告: package/AppDir目录不存在"
+              fi
+              
+              mkdir -p $APPDIR/usr/share/pixmaps
+              if [ -d "assets" ]; then
+                cp -r assets $APPDIR/usr/share/
+                echo "复制assets目录成功"
+              else
+                echo "警告: assets目录不存在"
+              fi
+              
+              # 配置gdk-pixbuf
+              mkdir -p $APPDIR/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders
+              cp -r /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders/* $APPDIR/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders/
+              cp /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders $APPDIR/usr/bin/
+              $APPDIR/usr/bin/gdk-pixbuf-query-loaders > $APPDIR/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache
+
+              # 验证AppDir结构
+              echo "AppDir结构验证:"
+              echo "AppDir根目录:"
+              ls -la $APPDIR/
+              echo "可执行文件:"
+              ls -la $APPDIR/usr/bin/k230_flash_gui
+              
+              # 设置AppImage输出路径
+              OUTPUT_PATH="/workspace/upload/k230_flash_gui-ubuntu-${{ env.VERSION }}.AppImage"
+              echo "AppImage输出路径: $OUTPUT_PATH"
+              
+              # 再次验证输出目录
+              echo "验证输出目录:"
+              ls -la /workspace/upload/
+              
+              # 打包 AppImage
+              echo "开始打包AppImage..."
+              if ARCH=x86_64 appimagetool --no-appstream $APPDIR "$OUTPUT_PATH"; then
+                echo "AppImage创建成功!"
+                ls -la "$OUTPUT_PATH"
+              else
+                echo "AppImage创建失败，退出码: $?"
+                # 显示更多调试信息
+                echo "AppDir内容检查:"
+                find $APPDIR -type f | head -20
+                echo "输出目录检查:"
+                ls -la /workspace/upload/
+                exit 1
+              fi
+            '
+      
+      # PyInstaller 构建 GUI
+      # - name: Build GUI with pyinstaller
+      #   run: |
+      #     pip install --upgrade pip
+      #     pip install pyinstaller
+      #     pip install -r requirements.txt
+      #     pip install -e .
+      #     cd src/gui
+      #     pyinstaller --clean k230_flash_gui.spec
+      
+
+
+      # # zip
+      # - name: Package GUI Zip
+      #   run: |
+      #     mkdir -p upload
+      #     cd src/gui/dist
+      #     7z a ../../../upload/k230_flash_gui-${{ matrix.label }}-${{ env.VERSION }}.zip *
+
+      # 上传 release
+      - name: Upload GUI Release Asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: upload/*
+          prerelease: true
+
+      - name: Upload GUI Nightly Artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: k230_flash_gui-${{ matrix.label }}-${{ env.VERSION }}
+          path: upload/*

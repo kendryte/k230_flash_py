@@ -1,0 +1,67 @@
+# =========================================
+# Ubuntu 20.04 + Python 3.11 + PySide6 + PyInstaller
+# =========================================
+FROM ubuntu:20.04
+
+# 避免交互提示
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    wget \
+    curl \
+    git \
+    build-essential \
+    libfuse2 \
+    fuse \
+    libgl1-mesa-dev \
+    libvulkan-dev \
+    libssl-dev \
+    libudev-dev \
+    file \
+    apt-utils \
+    ca-certificates \
+    unzip \
+    gnupg \
+    lsb-release \
+    shared-mime-info \
+    libgdk-pixbuf2.0-0 \
+    libgdk-pixbuf2.0-bin \
+    libgdk-pixbuf2.0-dev \
+    libusb-1.0-0 \
+    libusb-1.0-0-dev \
+    libusb-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 Python 3.11
+RUN add-apt-repository ppa:deadsnakes/ppa -y && \
+    apt-get update && \
+    apt-get install -y python3.11 python3.11-venv python3.11-dev python3.11-distutils curl && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1 && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 2 && \
+    update-alternatives --set python3 /usr/bin/python3.11
+
+# 安装 pip
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 && \
+    python3 -m pip install --upgrade pip setuptools wheel
+
+# 安装 PySide6 和 PyInstaller
+RUN python3 -m pip install PySide6 pyinstaller
+
+
+# 确保 gdk-pixbuf-query-loaders 可用
+RUN if [ ! -s /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders ]; then \
+        apt-get update && apt-get download libgdk-pixbuf2.0-bin && \
+        dpkg -x libgdk-pixbuf2.0-bin_*.deb /tmp/gdk && \
+        cp /tmp/gdk/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/ && \
+        chmod +x /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders && \
+        rm -rf /tmp/gdk libgdk-pixbuf2.0-bin_*.deb ; \
+    fi
+
+# 创建工作目录
+WORKDIR /workspace
+
+# 默认 shell
+CMD ["/bin/bash"]

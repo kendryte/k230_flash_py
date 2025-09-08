@@ -1,0 +1,204 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "K230 Flash: 烧录SDCARD",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "k230_flash.main",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": [
+                "0x00000000",
+                "C:/Data/CanMV_K230_01Studio_Fast_micropython_v1.3-138-gdd8c455_nncase_v2.9.0.img",
+                "--log-level",
+                "DEBUG",
+                "-m",
+                "SDCARD",
+                "--auto-reboot"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "K230_FLASH_DEBUG": "1"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "K230 Flash: 烧录 SDCARD ZIP",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "k230_flash.main",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": [
+                "0x00000000",
+                "C:/Users/huangzhenming/Downloads/sysimage-sdcard.img.gz",
+                "--log-level",
+                "DEBUG",
+                "-m",
+                "SDCARD",
+                "--auto-reboot"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "K230_FLASH_DEBUG": "1"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "K230 Flash: 烧录SDCARD KDIMG",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "k230_flash.main",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": [
+                "C:/data/k230_xwy01_rtsmart_local_nncase_v2.9.0(4).kdimg",
+                "--log-level",
+                "DEBUG",
+                "-m",
+                "SDCARD",
+                "--auto-reboot"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "K230_FLASH_DEBUG": "1"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "K230 Flash: 烧录SDCARD KDIMG overlay",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "k230_flash.main",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": [
+                "C:/data/k230_xwy01_rtsmart_local_nncase_v2.9.0(4).kdimg",
+                "--kdimg-select",
+                "uboot_spl_a", "uboot_spl_b", "uboot_a", "uboot_b", 
+                "--log-level",
+                "DEBUG",
+                "-m",
+                "SDCARD",
+                "--auto-reboot"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "K230_FLASH_DEBUG": "1"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "K230 Flash: 烧录 EMMC ZIP",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "k230_flash.main",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": [
+                "0x00000000",
+                "C:/Users/huangzhenming/Downloads/sysimage-sdcard.img.gz",
+                "--log-level",
+                "DEBUG",
+                "-m",
+                "EMMC",
+                "--auto-reboot"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "K230_FLASH_DEBUG": "1"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "K230 Flash: 烧录 SPI NAND",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "k230_flash.main",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": [
+                "0x00000000",
+                "C:/Users/huangzhenming/Downloads/sysimage-spinand32m.img.gz",
+                "--log-level",
+                "DEBUG",
+                "-m",
+                "SPI_NAND",
+                "--auto-reboot"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "K230_FLASH_DEBUG": "1"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "K230 Flash: 烧录 SPI NOR",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "k230_flash.main",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": [
+                "0x00000000",
+                "C:/Users/huangzhenming/Downloads/sysimage-spinor32m.img",
+                "--log-level",
+                "DEBUG",
+                "-m",
+                "SPI_NOR",
+                "--auto-reboot"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "K230_FLASH_DEBUG": "1"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "K230 Flash: 列表设备",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "k230_flash.main",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": [
+                "--list-device"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            }
+        },
+        {
+            "name": "K230 Flash: 调试当前文件",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            }
+        },
+        {
+            "name": "K230 Flash: 本地库调试GUI",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/gui/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "K230_FLASH_LOCAL_DEBUG_MODE": "1"
+            }
+        }
+    ]
+}

@@ -1,0 +1,21 @@
+#!/bin/bash
+HERE="$(dirname "$(readlink -f "${0}")")"
+
+# 设置 Qt 插件路径（PyInstaller qt plugins）
+export QT_QPA_PLATFORM_PLUGIN_PATH="$HERE/usr/bin/qt5_plugins/platforms"
+export LD_LIBRARY_PATH="$HERE/usr/bin:$HERE/usr/lib:$LD_LIBRARY_PATH"
+
+# 设置 gdk-pixbuf loaders 路径
+export GDK_PIXBUF_MODULEDIR="$HERE/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+export GDK_PIXBUF_MODULE_FILE="$HERE/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+
+# 如果没有 loaders.cache，就生成一个
+if [ ! -f "$GDK_PIXBUF_MODULE_FILE" ]; then
+  if [ -x "$HERE/usr/bin/gdk-pixbuf-query-loaders" ]; then
+    "$HERE/usr/bin/gdk-pixbuf-query-loaders" > "$GDK_PIXBUF_MODULE_FILE"
+  elif command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then
+    gdk-pixbuf-query-loaders > "$GDK_PIXBUF_MODULE_FILE"
+  fi
+fi
+
+exec "$HERE/usr/bin/k230_flash_gui" "$@"
