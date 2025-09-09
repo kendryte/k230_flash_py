@@ -2,6 +2,9 @@ import json
 from pathlib import Path
 
 import PySide6.QtWidgets as QtWidgets
+import utils as utils
+from advanced_settings import AdvancedSettingsDialog
+from common_widget_sytles import CommonWidgetStyles
 from loguru import logger
 from PySide6 import QtGui
 from PySide6.QtCore import (
@@ -48,6 +51,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLayout,
     QLineEdit,
     QMainWindow,
     QMenu,
@@ -65,14 +69,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import utils as utils
 import k230_flash.file_utils as cmd_file_utils
 import k230_flash.kdimage as cmd_kdimg
 import k230_flash.main as cmd_main
-from advanced_settings import AdvancedSettingsDialog
-from common_widget_sytles import CommonWidgetStyles
 from k230_flash import *
 from k230_flash.api import list_devices
+
 
 class BatchFlash(QMainWindow):
     def __init__(self):
@@ -83,10 +85,6 @@ class BatchFlash(QMainWindow):
 
         self.ui = Ui_BatchFlashWindow(log_output_widget=self.log_output)
         self.ui.setupUi(self)
-
-    def init_logging_display(self):
-        # 由于移除了日志输出窗口，这里不需要初始化日志显示
-        pass
 
     @Slot(str)
     def append_log_content(self, content):
@@ -179,12 +177,12 @@ class Ui_BatchFlashWindow(object):
         # 创建垂直布局
         main_layout = QVBoxLayout(self.centralwidget)
         main_layout.addWidget(self.create_file_browser_region())
-        
+
         # 调整镜像文件内容区域的高度为原来的一半
         table_widget = self.create_table()
-        table_widget.setMaximumHeight(150)  # 设置最大高度为150像素（原高度的一半）
+        table_widget.setMaximumHeight(200)  # 设置最大高度为200像素
         main_layout.addWidget(table_widget)
-        
+
         # 创建上半部分区域（包含目标介质和批量烧录控制）
         top_layout = QHBoxLayout()
         # 设置目标介质区域
@@ -194,7 +192,7 @@ class Ui_BatchFlashWindow(object):
         top_layout.addWidget(target_media_widget, stretch=3)
         top_layout.addWidget(batch_control_widget, stretch=1)
         main_layout.addLayout(top_layout)
-        
+
         # 创建下半部分区域（设备烧录进度）
         device_progress_widget = self.create_device_progress_region()
         main_layout.addWidget(device_progress_widget)
@@ -204,10 +202,10 @@ class Ui_BatchFlashWindow(object):
         self.addr_filename_pairs = []
         self.img_list_mode = None
 
-        # 设备相关状态
-        self.device_checkboxes = {}  # 存储设备复选框
+        # 设备相关状态（移除了device_checkboxes和device_status_labels）
+        # self.device_checkboxes = {}  # 存储设备复选框
         self.device_progress_bars = {}  # 存储设备进度条
-        self.device_status_labels = {}  # 存储设备状态标签
+        # self.device_status_labels = {}  # 存储设备状态标签
 
         # 自动烧录模式状态
         self.auto_flash_mode = False
@@ -241,21 +239,23 @@ class Ui_BatchFlashWindow(object):
         # self.list_device_button.setText(
         #     QCoreApplication.translate("BatchFlash", "刷新设备列表")
         # )
-        
+
         self.batch_control_group.setTitle(
             QCoreApplication.translate("BatchFlash", "批量烧录控制：")
         )
         self.start_button.setText(QCoreApplication.translate("BatchFlash", "开始烧录"))
-        self.auto_flash_button.setText(QCoreApplication.translate("BatchFlash", "自动烧录"))
+        self.auto_flash_button.setText(
+            QCoreApplication.translate("BatchFlash", "自动烧录")
+        )
         # 移除高级设置按钮的文本设置
         # self.advanced_setting_button.setText(
         #     QCoreApplication.translate("BatchFlash", "高级设置")
         # )
-        
+
         self.device_progress_group.setTitle(
             QCoreApplication.translate("BatchFlash", "设备烧录进度：")
         )
-        
+
         # 移除对日志输出控件的引用，因为我们已经移除了日志输出窗口
         # self.log_output_groupbox.setTitle(
         #     QCoreApplication.translate("BatchFlash", "日志输出：")
@@ -264,17 +264,17 @@ class Ui_BatchFlashWindow(object):
         # 更新表格头部标签
         self.update_table_headers()
 
-        # 更新复选框文本
-        if hasattr(self, "header_checkbox"):
-            self.header_checkbox.setText(
-                QCoreApplication.translate("BatchFlash", "全选")
-            )
+        # 移除了复选框文本更新，因为我们已经移除了复选框
+        # if hasattr(self, "header_checkbox"):
+        #     self.header_checkbox.setText(
+        #         QCoreApplication.translate("BatchFlash", "全选")
+        #     )
 
     def update_table_headers(self):
         """更新表格头部标签"""
         if hasattr(self, "table"):
             headers = [
-                "",  # 第一列空白，用于复选框
+                "",  # 第一列空白
                 QCoreApplication.translate("BatchFlash", "镜像名称"),
                 QCoreApplication.translate("BatchFlash", "烧录地址"),
                 QCoreApplication.translate("BatchFlash", "镜像大小"),
@@ -348,11 +348,7 @@ class Ui_BatchFlashWindow(object):
 
             row = 0  # 始终使用第一行
 
-            # 复选框列（默认选中）
-            checkbox_item = QTableWidgetItem()
-            checkbox_item.setCheckState(Qt.Checked)
-            self.table.setItem(row, 0, checkbox_item)
-
+            # 空白列（移除了复选框）
             # 名称列（可编辑）
             name_item = QTableWidgetItem(str(file_path))
             self.table.setItem(row, 1, name_item)
@@ -388,11 +384,7 @@ class Ui_BatchFlashWindow(object):
             for item in items.data:
                 logger.debug(f"添加镜像: {item}")
 
-                # 复选框列（默认选中）
-                checkbox_item = QTableWidgetItem()
-                checkbox_item.setCheckState(Qt.Checked)
-                self.table.setItem(row, 0, checkbox_item)
-
+                # 空白列（移除了复选框）
                 # 名称列（可编辑）
                 name_item = QTableWidgetItem(item.partName)
                 self.table.setItem(row, 1, name_item)
@@ -447,8 +439,7 @@ class Ui_BatchFlashWindow(object):
             1, QHeaderView.Stretch
         )  # 让第二列自动拉伸
 
-        # 在表头的第一列中添加"全选"复选框
-        self.add_header_checkbox()
+        # 移除了表头复选框的添加
 
         # 美化表格
         self.style_table()
@@ -458,26 +449,7 @@ class Ui_BatchFlashWindow(object):
 
         return self.image_table_groupbox  # 返回 QGroupBox
 
-    def add_header_checkbox(self):
-        # 获取水平表头
-        header = self.table.horizontalHeader()
-
-        # 创建一个 QCheckBox 作为表头的复选框
-        self.header_checkbox = QCheckBox()
-        # 初始化时不设置文本，等待update_ui_text调用
-        self.header_checkbox.setStyleSheet(CommonWidgetStyles.QCheckBox_css())
-        self.header_checkbox.stateChanged.connect(self.toggle_all_checkboxes)
-
-        # 将复选框添加到表头
-        header_widget = QWidget()
-        header_layout = QHBoxLayout(header_widget)
-        header_layout.addWidget(self.header_checkbox)
-        header_layout.setAlignment(Qt.AlignCenter)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_widget.setLayout(header_layout)
-
-        self.table.setHorizontalHeaderItem(0, QTableWidgetItem())
-        self.table.setCellWidget(-1, 0, header_widget)
+    # 移除了add_header_checkbox方法
 
     def style_table(self):
         """设置表格的样式"""
@@ -497,12 +469,7 @@ class Ui_BatchFlashWindow(object):
         self.table.setSelectionMode(QTableWidget.SingleSelection)  # 单选模式
         self.table.setSelectionBehavior(QTableWidget.SelectRows)  # 选中整行
 
-    def toggle_all_checkboxes(self, state):
-        """根据表头复选框的状态，设置所有行的复选框状态"""
-        for row in range(self.table.rowCount()):
-            checkbox_item = self.table.item(row, 0)
-            if checkbox_item:
-                checkbox_item.setCheckState(state)
+    # 移除了toggle_all_checkboxes方法
 
     def create_target_media_region(self):
         # 创建一个 QGroupBox 作为容器
@@ -566,33 +533,28 @@ class Ui_BatchFlashWindow(object):
     def create_device_progress_region(self):
         # 创建一个 QGroupBox 作为容器
         self.device_progress_group = QGroupBox("设备烧录进度：")
-        
+
         # 创建一个滚动区域以容纳大量设备
         self.device_progress_scroll = QtWidgets.QScrollArea()
         self.device_progress_scroll.setWidgetResizable(True)
         self.device_progress_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        
+
         # 创建一个widget作为滚动区域的内容
         self.device_progress_content = QWidget()
-        # 使用网格布局以支持双列显示
-        self.device_progress_layout = QGridLayout(self.device_progress_content)
-        
-        # 设置布局的间距和边距，使其紧凑排列
-        self.device_progress_layout.setSpacing(5)  # 控件间距
-        self.device_progress_layout.setContentsMargins(5, 5, 5, 5)
-        
+        # 使用流式布局来平铺设备图标
+        self.device_progress_layout = FlowLayout(self.device_progress_content)
+
+        # 设置布局的间距和边距
+        self.device_progress_layout.setSpacing(10)  # 控件间距
+        self.device_progress_layout.setContentsMargins(10, 10, 10, 10)
+
         # 将内容widget设置到滚动区域
         self.device_progress_scroll.setWidget(self.device_progress_content)
-        
+
         # 创建主布局并添加滚动区域
         main_layout = QVBoxLayout(self.device_progress_group)
         main_layout.addWidget(self.device_progress_scroll)
         main_layout.setContentsMargins(0, 0, 0, 0)
-
-        # 初始化时添加提示文本
-        self.device_progress_placeholder = QLabel("暂无设备连接")
-        self.device_progress_placeholder.setAlignment(Qt.AlignCenter)
-        self.device_progress_layout.addWidget(self.device_progress_placeholder, 0, 0, 1, 2)  # 跨两列显示
 
         return self.device_progress_group
 
@@ -602,10 +564,10 @@ class Ui_BatchFlashWindow(object):
         if not self.validate_inputs():
             return
 
-        # 获取选中的设备
+        # 获取所有设备（因为移除了复选框，所以烧录所有设备）
         selected_devices = self.get_selected_devices()
         if not selected_devices:
-            logger.warning("没有选中任何设备进行烧录")
+            logger.warning("没有设备进行烧录")
             return
 
         # 获取配置参数
@@ -637,13 +599,27 @@ class Ui_BatchFlashWindow(object):
             ),
         }
 
-        logger.info(f"开始批量烧录，选中设备: {selected_devices}")
+        logger.info(f"开始批量烧录，设备: {selected_devices}")
 
-        # 为每个选中的设备启动烧录线程
+        # 为每个设备启动烧录线程
         for device_path in selected_devices:
             if device_path in self.flash_threads:
                 logger.warning(f"设备 {device_path} 已在烧录中，跳过")
                 continue
+
+            # 通知设备控件开始烧录
+            if device_path in self.device_progress_bars:
+                # 获取对应的设备控件（DeviceIconWidget）
+                for i in range(self.device_progress_layout.count()):
+                    item = self.device_progress_layout.itemAt(i)
+                    if item and item.widget():
+                        widget = item.widget()
+                        if (
+                            isinstance(widget, DeviceIconWidget)
+                            and widget.device_path == device_path
+                        ):
+                            widget.start_flashing()
+                            break
 
             # 创建并启动线程
             flash_thread = DeviceFlashThread(device_path, params)
@@ -654,9 +630,9 @@ class Ui_BatchFlashWindow(object):
             # 保存线程引用
             self.flash_threads[device_path] = flash_thread
 
-            # 更新设备状态为"烧录中"
-            if device_path in self.device_status_labels:
-                self.device_status_labels[device_path].setText("烧录中...")
+            # 移除了更新设备状态为"烧录中"的代码，因为我们现在通过更换图标来表示状态
+            # if device_path in self.device_status_labels:
+            #     self.device_status_labels[device_path].setText("烧录中...")
 
     def toggle_auto_flash_mode(self):
         """切换自动烧录模式"""
@@ -683,12 +659,9 @@ class Ui_BatchFlashWindow(object):
         return True
 
     def get_selected_devices(self):
-        """获取选中的设备列表"""
-        selected_devices = []
-        for device_path, checkbox in self.device_checkboxes.items():
-            if checkbox.isChecked():
-                selected_devices.append(device_path)
-        return selected_devices
+        """获取所有设备列表（因为移除了复选框，所以返回所有设备）"""
+        # 由于移除了复选框，这里返回所有连接的设备
+        return list(self.device_progress_bars.keys())
 
     def get_media_type(self):
         """获取选择的介质类型"""
@@ -723,25 +696,23 @@ class Ui_BatchFlashWindow(object):
         """从表格获取地址-文件对"""
         pairs = []
         for row in range(self.table.rowCount()):
-            cell = self.table.item(row, 0)
-            if cell is not None and cell.checkState() == Qt.Checked:
-                address_item = self.table.item(row, 2)
-                file_item = self.table.item(row, 1)
-                if address_item is not None and file_item is not None:
-                    address = int(address_item.text(), 16)
-                    file_path = file_item.text()
-                    pairs.append((address, file_path))
+            # 移除了复选框检查，现在获取所有行的数据
+            address_item = self.table.item(row, 2)
+            file_item = self.table.item(row, 1)
+            if address_item is not None and file_item is not None:
+                address = int(address_item.text(), 16)
+                file_path = file_item.text()
+                pairs.append((address, file_path))
         return pairs
 
     def get_selected_partition_names(self):
-        """获取选中的分区名列表（仅适用于kdimg模式）"""
+        """获取所有分区名列表（仅适用于kdimg模式，因为移除了复选框）"""
         partition_names = []
         for row in range(self.table.rowCount()):
-            cell = self.table.item(row, 0)
-            if cell is not None and cell.checkState() == Qt.Checked:
-                name_item = self.table.item(row, 1)
-                if name_item is not None:
-                    partition_names.append(name_item.text())
+            # 移除了复选框检查，现在获取所有行的数据
+            name_item = self.table.item(row, 1)
+            if name_item is not None:
+                partition_names.append(name_item.text())
         return partition_names
 
     def update_device_progress(self, device_path, current, total, progress):
@@ -750,23 +721,37 @@ class Ui_BatchFlashWindow(object):
             progress_bar = self.device_progress_bars[device_path]
             progress_bar.setValue(progress)
 
+        # 同时更新设备控件的进度显示
+        # 获取对应的设备控件（DeviceIconWidget）
+        for i in range(self.device_progress_layout.count()):
+            item = self.device_progress_layout.itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                if (
+                    isinstance(widget, DeviceIconWidget)
+                    and widget.device_path == device_path
+                ):
+                    widget.update_progress(progress)
+                    break
+
     def handle_device_flash_result(self, device_path, success, error_message):
         """处理设备烧录结果"""
         # 移除已完成的线程
         if device_path in self.flash_threads:
             del self.flash_threads[device_path]
 
-        # 更新设备状态
-        if device_path in self.device_status_labels:
-            status_label = self.device_status_labels[device_path]
-            if success:
-                status_label.setText("烧录成功")
-                status_label.setStyleSheet("color: green; font-weight: bold;")
-                logger.info(f"设备 {device_path} 烧录成功")
-            else:
-                status_label.setText("烧录失败")
-                status_label.setStyleSheet("color: red; font-weight: bold;")
-                logger.error(f"设备 {device_path} 烧录失败: {error_message}")
+        # 通知设备控件完成烧录
+        # 获取对应的设备控件（DeviceIconWidget）
+        for i in range(self.device_progress_layout.count()):
+            item = self.device_progress_layout.itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                if (
+                    isinstance(widget, DeviceIconWidget)
+                    and widget.device_path == device_path
+                ):
+                    widget.finish_flashing(success)
+                    break
 
     def refresh_device_list(self):
         """刷新设备列表"""
@@ -779,10 +764,35 @@ class Ui_BatchFlashWindow(object):
             devices = []
 
         # 更新设备进度区域
+        # devices = [
+        #     "2-6.122222",
+        #     "2-6.2",
+        #     "2-6.3",
+        #     # "2-6.4",
+        #     # "2-6.5",
+        #     # "2-6.6",
+        # ]
+        # devices += [
+        #     "2-5.2",
+        #     "2-5.3",
+        #     "2-5.4",
+        #     "2-5.5",
+        #     "2-5.6",
+        #     "2-5.7",
+        #     "2-5.8",
+        #     "2-5.9",
+        #     "2-5.10",
+        #     "2-5.11",
+        #     "2-5.12",
+        #     "2-5.13",
+        #     "2-5.14",
+        #     "2-5.15",
+        # ]
+
         self.update_device_progress_area(devices)
 
     def update_device_progress_area(self, devices):
-        """更新设备进度区域，使用双列布局显示设备"""
+        """更新设备进度区域，使用图标形式显示设备"""
         # 清除之前的设备控件
         while self.device_progress_layout.count():
             child = self.device_progress_layout.takeAt(0)
@@ -790,65 +800,30 @@ class Ui_BatchFlashWindow(object):
                 child.widget().deleteLater()
 
         # 清除之前的设备控件引用
-        self.device_checkboxes.clear()
         self.device_progress_bars.clear()
-        self.device_status_labels.clear()
 
         # 如果没有设备，显示提示文本
         if not devices:
             self.device_progress_placeholder = QLabel("暂无设备连接")
             self.device_progress_placeholder.setAlignment(Qt.AlignCenter)
-            self.device_progress_layout.addWidget(self.device_progress_placeholder, 0, 0, 1, 2)  # 跨两列显示
+            self.device_progress_layout.addWidget(self.device_progress_placeholder)
             return
 
-        # 为每个设备创建进度控件，使用双列布局
+        # 为每个设备创建图标控件
         for i, device_path in enumerate(devices):
-            # 计算行和列位置
-            row = i // 2  # 每行显示两个设备
-            col = i % 2   # 列号 0 或 1
-            
-            # 创建设备行
-            device_widget = QWidget()
-            device_layout = QHBoxLayout(device_widget)
-            device_layout.setContentsMargins(2, 1, 2, 1)  # 减小边距
-            device_layout.setSpacing(3)  # 减小控件间距
+            # 从设备路径中提取端口号（最后一个部分）
+            port_number = (
+                device_path.split(".")[-1] if "." in device_path else str(i + 1)
+            )
 
-            # 设备路径标签
-            device_label = QLabel(device_path)
-            device_label.setMinimumWidth(120)
-            device_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-            device_layout.addWidget(device_label)
+            # 创建设备图标控件
+            device_widget = DeviceIconWidget(device_path, port_number)
 
-            # 设备选择复选框
-            device_checkbox = QCheckBox()
-            device_checkbox.setChecked(True)  # 默认选中
-            self.device_checkboxes[device_path] = device_checkbox
-            device_layout.addWidget(device_checkbox)
+            # 保存设备控件引用
+            self.device_progress_bars[device_path] = device_widget.progress_bar
 
-            # 进度条
-            progress_bar = QProgressBar()
-            progress_bar.setValue(0)
-            progress_bar.setFixedHeight(15)  # 进度条高度
-            progress_bar.setStyleSheet(CommonWidgetStyles.QProgressBar_css())
-            # 设置进度条可以伸缩以填充空间
-            progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            self.device_progress_bars[device_path] = progress_bar
-            device_layout.addWidget(progress_bar)
-
-            # 状态标签
-            status_label = QLabel("待烧录")
-            status_label.setMinimumWidth(60)
-            status_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-            self.device_status_labels[device_path] = status_label
-            device_layout.addWidget(status_label)
-
-            # 添加到网格布局
-            self.device_progress_layout.addWidget(device_widget, row, col)
-
-        # 如果设备数量是奇数，在最后一行右侧添加一个占位符
-        if len(devices) % 2 == 1:
-            placeholder = QWidget()
-            self.device_progress_layout.addWidget(placeholder, len(devices) // 2, 1)
+            # 将设备控件添加到布局
+            self.device_progress_layout.addWidget(device_widget)
 
         # 如果启用了自动烧录模式，自动开始烧录新连接的设备
         if self.auto_flash_mode:
@@ -871,3 +846,189 @@ class Ui_BatchFlashWindow(object):
             "stop_auto_flash": QCoreApplication.translate("BatchFlash", "停止自动烧录"),
         }
         return translations.get(key, key)
+        return translations.get(key, key)
+        return translations.get(key, key)
+
+
+class FlowLayout(QLayout):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._items = []
+        self._spacing = 10
+
+    def setSpacing(self, spacing):
+        self._spacing = spacing
+        self.update()
+
+    def spacing(self):
+        return self._spacing
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientations(Qt.Horizontal)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._doLayout(QRect(0, 0, width, 0), True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._doLayout(rect, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        size += QSize(
+            margins.left() + margins.right(), margins.top() + margins.bottom()
+        )
+        return size
+
+    def _doLayout(self, rect, testOnly):
+        x = rect.x()
+        y = rect.y()
+        lineHeight = 0
+
+        for item in self._items:
+            wid = item.widget()
+            spaceX = self.spacing()
+            spaceY = self.spacing()
+            nextX = x + item.sizeHint().width() + spaceX
+            if nextX - spaceX > rect.right() and lineHeight > 0:
+                x = rect.x()
+                y = y + lineHeight + spaceY
+                nextX = x + item.sizeHint().width() + spaceX
+                lineHeight = 0
+
+            if not testOnly:
+                item.setGeometry(QRect(QPoint(x, y), item.sizeHint()))
+
+            x = nextX
+            lineHeight = max(lineHeight, item.sizeHint().height())
+
+        return y + lineHeight - rect.y()
+
+
+class DeviceIconWidget(QWidget):
+    def __init__(self, device_path, port_number, parent=None):
+        super().__init__(parent)
+        self.device_path = device_path
+        self.port_number = port_number
+        self.current_status = "ready"  # ready, flashing, success, failed
+
+        # 设置固定大小为160x160
+        self.setFixedSize(160, 160)
+
+        # 创建端口号标签
+        self.port_label = QLabel(str(port_number), self)
+        self.port_label.setStyleSheet(
+            "color: white; font-weight: bold; background-color: rgba(0, 0, 0, 128); border-radius: 2px;"
+        )
+        self.port_label.setAlignment(Qt.AlignCenter)
+        self.port_label.setGeometry(5, 5, 20, 20)
+
+        # 创建设备路径标签
+        self.path_label = QLabel(device_path, self)
+        self.path_label.setStyleSheet("color: black; font-size: 8px;")
+        self.path_label.setAlignment(Qt.AlignCenter)
+        self.path_label.setGeometry(5, 135, 150, 20)
+
+        # 创建进度条（初始隐藏）
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setGeometry(30, 70, 100, 20)
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setStyleSheet(
+            """
+            QProgressBar {
+                border: 1px solid grey;
+                border-radius: 5px;
+                text-align: center;
+                background-color: rgba(255, 255, 255, 180);
+            }
+            QProgressBar::chunk {
+                background-color: #3add36;
+                width: 20px;
+            }
+        """
+        )
+
+        # 移除了status_label，因为我们现在通过更换图标来表示状态
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # 根据状态选择图标
+        icon_filename = "usb_type_c_ready.png"
+        if self.current_status == "flashing":
+            icon_filename = "usb_type_c_ok.png"
+        elif self.current_status == "success":
+            icon_filename = "usb_type_c_ok.png"
+        elif self.current_status == "failed":
+            icon_filename = "usb_type_c_ng.png"
+
+        # 构造图片路径
+        from pathlib import Path
+
+        current_dir = Path(__file__).parent
+        image_path = current_dir / "assets" / icon_filename
+
+        # 加载图片
+        pixmap = QPixmap()
+        if image_path.exists():
+            pixmap.load(str(image_path))
+        else:
+            # 如果图片不存在，使用默认的矩形
+            painter.setBrush(QColor(200, 200, 200))
+            painter.setPen(Qt.NoPen)
+            painter.drawRect(30, 30, 100, 100)
+            return
+
+        # 缩放并绘制图片
+        scaled_pixmap = pixmap.scaled(
+            100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        painter.drawPixmap(30, 30, scaled_pixmap)
+
+    def start_flashing(self):
+        """开始烧录，显示进度条，更新图标状态"""
+        self.current_status = "flashing"
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+        self.update()  # 触发重绘以更新图标
+
+    def update_progress(self, value):
+        """更新进度条"""
+        self.progress_bar.setValue(value)
+
+    def finish_flashing(self, success):
+        """完成烧录，隐藏进度条，更新图标状态"""
+        self.progress_bar.setVisible(False)
+
+        if success:
+            self.current_status = "success"
+        else:
+            self.current_status = "failed"
+
+        self.update()  # 触发重绘以更新图标
