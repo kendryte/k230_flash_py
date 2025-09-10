@@ -249,7 +249,7 @@ class Ui_BatchFlashWindow(object):
             QCoreApplication.translate("BatchFlash", "批量烧录控制：")
         )
         self.start_button.setText(QCoreApplication.translate("BatchFlash", "开始烧录"))
-        self.auto_flash_button.setText(
+        self.auto_flash_checkbox.setText(
             QCoreApplication.translate("BatchFlash", "自动烧录")
         )
         # 移除高级设置按钮的文本设置
@@ -521,15 +521,14 @@ class Ui_BatchFlashWindow(object):
         # 增大按钮高度
         self.start_button.setFixedHeight(60)
 
-        # 创建 "自动烧录" 按钮
-        self.auto_flash_button = QPushButton("自动烧录")
-        self.auto_flash_button.setStyleSheet(CommonWidgetStyles.QPushButton_css())
-        self.auto_flash_button.clicked.connect(self.toggle_auto_flash_mode)
-        # 增大按钮高度
-        self.auto_flash_button.setFixedHeight(60)
+        # 创建 "自动烧录" 复选框
+        self.auto_flash_checkbox = QCheckBox("自动烧录")
+        self.auto_flash_checkbox.stateChanged.connect(self.toggle_auto_flash_mode)
+        # 设置复选框样式
+        self.auto_flash_checkbox.setStyleSheet("QCheckBox { font-size: 14px; }")
 
         layout.addWidget(self.start_button)
-        layout.addWidget(self.auto_flash_button)
+        layout.addWidget(self.auto_flash_checkbox)
         # 移除高级设置按钮
         # layout.addWidget(self.advanced_setting_button)
 
@@ -576,7 +575,7 @@ class Ui_BatchFlashWindow(object):
             if self.device_states.get(device) == "ready"
         ]
         if not ready_devices:
-            logger.warning("没有处于ready状态的设备进行烧录")
+            # logger.warning("没有处于ready状态的设备进行烧录")
             return
 
         # 获取配置参数
@@ -645,12 +644,12 @@ class Ui_BatchFlashWindow(object):
 
     def toggle_auto_flash_mode(self):
         """切换自动烧录模式"""
-        self.auto_flash_mode = not self.auto_flash_mode
+        # 对于复选框，stateChanged信号会传递一个状态值
+        # Qt.Checked 表示选中，Qt.Unchecked 表示未选中
+        self.auto_flash_mode = self.auto_flash_checkbox.isChecked()
         if self.auto_flash_mode:
-            self.auto_flash_button.setText("停止自动烧录")
             logger.info("已启用自动烧录模式")
         else:
-            self.auto_flash_button.setText("自动烧录")
             logger.info("已禁用自动烧录模式")
 
     def validate_inputs(self):
@@ -778,12 +777,8 @@ class Ui_BatchFlashWindow(object):
 
     def add_device_to_ui(self, device_path):
         """添加新设备到界面"""
-        # 从设备路径中提取端口号（最后一个部分）
-        port_number = (
-            device_path.split(".")[-1]
-            if "." in device_path
-            else str(len(self.known_devices))
-        )
+        # 使用从1开始的自然计数作为端口号
+        port_number = str(len(self.known_devices))
 
         # 创建设备图标控件
         device_widget = DeviceIconWidget(device_path, port_number)
@@ -824,6 +819,7 @@ class Ui_BatchFlashWindow(object):
         except Exception as e:
             logger.error(f"获取设备列表失败: {str(e)}")
             devices = []
+            return None
 
         # 更新设备状态
         # 1. 标记当前在线的设备为ready状态
@@ -868,8 +864,6 @@ class Ui_BatchFlashWindow(object):
             "auto_flash": QCoreApplication.translate("BatchFlash", "自动烧录"),
             "stop_auto_flash": QCoreApplication.translate("BatchFlash", "停止自动烧录"),
         }
-        return translations.get(key, key)
-        return translations.get(key, key)
         return translations.get(key, key)
 
 
@@ -973,25 +967,28 @@ class DeviceIconWidget(QWidget):
 
         # 创建设备路径标签
         self.path_label = QLabel(device_path, self)
-        self.path_label.setStyleSheet("color: black; font-size: 8px;")
+        self.path_label.setStyleSheet("color: black; font-size: 12px;")
         self.path_label.setAlignment(Qt.AlignCenter)
         self.path_label.setGeometry(5, 135, 150, 20)
 
         # 创建进度条（初始隐藏）
         self.progress_bar = QProgressBar(self)
-        self.progress_bar.setGeometry(30, 70, 100, 20)
+        self.progress_bar.setGeometry(31, 73, 98, 14)
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
         self.progress_bar.setVisible(False)
         self.progress_bar.setStyleSheet(
             """
             QProgressBar {
-                border: 1px solid grey;
-                border-radius: 5px;
+                border: 0px solid grey;
                 text-align: center;
                 background-color: rgba(255, 255, 255, 180);
             }
             QProgressBar::chunk {
                 background-color: #3add36;
-                width: 20px;
+                border-radius: 20px;   /* 填充部分也圆角 */
+                margin-left: 0px;
+                margin-right: 0px;
             }
         """
         )
@@ -1002,43 +999,28 @@ class DeviceIconWidget(QWidget):
 
         try:
             # 根据状态选择图标
-            icon_filename = "usb_type_c_ready.png"
+            icon_filename = ":/icons/assets/usb_type_c_ready.png"
             if self.current_status == "flashing":
-                icon_filename = "usb_type_c_ok.png"
+                icon_filename = ":/icons/assets/usb_type_c_ready.png"
             elif self.current_status == "success":
-                icon_filename = "usb_type_c_ok.png"
+                icon_filename = ":/icons/assets/usb_type_c_ready.png"
             elif self.current_status == "failed":
-                icon_filename = "usb_type_c_ng.png"
+                icon_filename = ":/icons/assets/usb_type_c_failed.png"
             elif self.current_status == "disabled":
-                icon_filename = (
-                    "usb_type_c_ready.png"  # 如果没有disabled图标，暂时使用ready图标
-                )
-                # 可以在这里添加一个视觉效果来表示设备已禁用，比如降低透明度
-
-            # 构造图片路径
-            from pathlib import Path
-
-            current_dir = Path(__file__).parent
-            image_path = current_dir / "assets" / icon_filename
+                icon_filename = ":/icons/assets/usb_type_c_disabled.png"
 
             # 加载图片
             pixmap = QPixmap()
-            if image_path.exists():
-                pixmap.load(str(image_path))
-                # 如果设备已禁用，降低图片透明度
-                if self.current_status == "disabled":
-                    painter.setOpacity(0.5)
+            pixmap.load(str(icon_filename))
+            # 如果设备已禁用，降低图片透明度
+            if self.current_status == "disabled":
+                painter.setOpacity(0.5)
 
-                # 缩放并绘制图片
-                scaled_pixmap = pixmap.scaled(
-                    100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-                painter.drawPixmap(30, 30, scaled_pixmap)
-            else:
-                # 如果图片不存在，使用默认的矩形
-                painter.setBrush(QColor(200, 200, 200))
-                painter.setPen(Qt.NoPen)
-                painter.drawRect(30, 30, 100, 100)
+            # 缩放并绘制图片
+            scaled_pixmap = pixmap.scaled(
+                160, 160, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            painter.drawPixmap(0, 0, scaled_pixmap)
         finally:
             # 确保painter正确结束
             painter.end()
@@ -1056,11 +1038,11 @@ class DeviceIconWidget(QWidget):
 
     def finish_flashing(self, success):
         """完成烧录，隐藏进度条，更新图标状态"""
-        self.progress_bar.setVisible(False)
 
         if success:
             self.current_status = "success"
         else:
+            self.progress_bar.setVisible(False)
             self.current_status = "failed"
 
         self.update()  # 触发重绘以更新图标
@@ -1068,6 +1050,7 @@ class DeviceIconWidget(QWidget):
     def set_disabled(self):
         """设置设备为禁用状态"""
         self.current_status = "disabled"
+        self.progress_bar.setVisible(False)
         self.update()  # 触发重绘以更新图标
 
     def set_ready(self):
