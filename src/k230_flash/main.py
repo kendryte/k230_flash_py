@@ -177,6 +177,15 @@ def main(args_list=None, progress_callback=None, use_external_logging=False):
         else:
             logger.warning("No operation specified. Use -h for help.")
 
+    except SystemExit:
+        # 在GUI模式下，不重新抛出SystemExit异常，避免程序退出
+        if use_external_logging:
+            logger.info(
+                "SystemExit caught in GUI mode, not re-raising to prevent application exit"
+            )
+        else:
+            # 在CLI模式下，重新抛出SystemExit异常
+            raise
     except Exception as e:
         raise
 

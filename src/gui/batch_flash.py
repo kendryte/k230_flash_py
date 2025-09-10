@@ -151,6 +151,7 @@ class DeviceFlashThread(QThread):
             logger.info(f"设备 {self.device_path} 烧录成功！")
             self.finished_signal.emit(self.device_path, True, "")
         except SystemExit as e:
+            # 捕获SystemExit异常，避免程序退出
             error_message = f"设备 {self.device_path} 烧录失败: cmd_main 试图退出 GUI，错误代码: {e.code}"
             logger.error(error_message)
             self.finished_signal.emit(self.device_path, False, error_message)
@@ -178,7 +179,7 @@ class Ui_BatchFlashWindow(object):
         main_layout = QVBoxLayout(self.centralwidget)
         main_layout.addWidget(self.create_file_browser_region())
 
-        # 调整镜像文件内容区域的高度为原来的一半
+        # 调整镜像文件内容区域的高度
         table_widget = self.create_table()
         table_widget.setMaximumHeight(200)  # 设置最大高度为200像素
         main_layout.addWidget(table_widget)
@@ -201,6 +202,10 @@ class Ui_BatchFlashWindow(object):
         self.flash_threads = {}  # 存储每个设备的烧录线程
         self.addr_filename_pairs = []
         self.img_list_mode = None
+        self.known_devices = set()  # 跟踪已知设备，实现累积增量更新
+        self.device_states = (
+            {}
+        )  # 跟踪设备状态 {'device_path': 'ready'/'disabled'/'flashing'/'success'/'failed'}
 
         # 设备相关状态（移除了device_checkboxes和device_status_labels）
         # self.device_checkboxes = {}  # 存储设备复选框
@@ -552,9 +557,9 @@ class Ui_BatchFlashWindow(object):
         self.device_progress_scroll.setWidget(self.device_progress_content)
 
         # 创建主布局并添加滚动区域
-        main_layout = QVBoxLayout(self.device_progress_group)
-        main_layout.addWidget(self.device_progress_scroll)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        layout = QVBoxLayout(self.device_progress_group)
+        layout.addWidget(self.device_progress_scroll)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         return self.device_progress_group
 
@@ -564,10 +569,14 @@ class Ui_BatchFlashWindow(object):
         if not self.validate_inputs():
             return
 
-        # 获取所有设备（因为移除了复选框，所以烧录所有设备）
-        selected_devices = self.get_selected_devices()
-        if not selected_devices:
-            logger.warning("没有设备进行烧录")
+        # 获取所有已知设备中处于ready状态的设备
+        ready_devices = [
+            device
+            for device in self.known_devices
+            if self.device_states.get(device) == "ready"
+        ]
+        if not ready_devices:
+            logger.warning("没有处于ready状态的设备进行烧录")
             return
 
         # 获取配置参数
@@ -599,13 +608,17 @@ class Ui_BatchFlashWindow(object):
             ),
         }
 
-        logger.info(f"开始批量烧录，设备: {selected_devices}")
+        logger.info(f"开始批量烧录，设备: {ready_devices}")
 
-        # 为每个设备启动烧录线程
-        for device_path in selected_devices:
+        # 为每个处于ready状态的设备启动烧录线程
+        for device_path in ready_devices:
             if device_path in self.flash_threads:
                 logger.warning(f"设备 {device_path} 已在烧录中，跳过")
                 continue
+
+            # 更新设备状态为flashing
+            self.device_states[device_path] = "flashing"
+            self.update_device_icon(device_path, "flashing")
 
             # 通知设备控件开始烧录
             if device_path in self.device_progress_bars:
@@ -629,10 +642,6 @@ class Ui_BatchFlashWindow(object):
 
             # 保存线程引用
             self.flash_threads[device_path] = flash_thread
-
-            # 移除了更新设备状态为"烧录中"的代码，因为我们现在通过更换图标来表示状态
-            # if device_path in self.device_status_labels:
-            #     self.device_status_labels[device_path].setText("烧录中...")
 
     def toggle_auto_flash_mode(self):
         """切换自动烧录模式"""
@@ -659,9 +668,9 @@ class Ui_BatchFlashWindow(object):
         return True
 
     def get_selected_devices(self):
-        """获取所有设备列表（因为移除了复选框，所以返回所有设备）"""
-        # 由于移除了复选框，这里返回所有连接的设备
-        return list(self.device_progress_bars.keys())
+        """获取所有已知设备列表"""
+        # 返回所有已知设备
+        return list(self.known_devices)
 
     def get_media_type(self):
         """获取选择的介质类型"""
@@ -736,9 +745,23 @@ class Ui_BatchFlashWindow(object):
 
     def handle_device_flash_result(self, device_path, success, error_message):
         """处理设备烧录结果"""
-        # 移除已完成的线程
-        if device_path in self.flash_threads:
+        # 获取线程引用
+        thread = self.flash_threads.get(device_path)
+
+        # 等待线程结束并移除已完成的线程
+        if thread is not None:
+            # 等待线程结束，最多等待5秒
+            thread.wait(5000)
+            # 从字典中移除线程引用
             del self.flash_threads[device_path]
+
+        # 更新设备状态
+        if success:
+            self.device_states[device_path] = "success"
+            logger.info(f"设备 {device_path} 烧录成功")
+        else:
+            self.device_states[device_path] = "failed"
+            logger.error(f"设备 {device_path} 烧录失败: {error_message}")
 
         # 通知设备控件完成烧录
         # 获取对应的设备控件（DeviceIconWidget）
@@ -753,6 +776,45 @@ class Ui_BatchFlashWindow(object):
                     widget.finish_flashing(success)
                     break
 
+    def add_device_to_ui(self, device_path):
+        """添加新设备到界面"""
+        # 从设备路径中提取端口号（最后一个部分）
+        port_number = (
+            device_path.split(".")[-1]
+            if "." in device_path
+            else str(len(self.known_devices))
+        )
+
+        # 创建设备图标控件
+        device_widget = DeviceIconWidget(device_path, port_number)
+
+        # 保存设备控件引用
+        self.device_progress_bars[device_path] = device_widget.progress_bar
+
+        # 将设备控件添加到布局
+        self.device_progress_layout.addWidget(device_widget)
+
+        # 初始化设备状态为ready
+        self.device_states[device_path] = "ready"
+
+    def update_device_icon(self, device_path, status):
+        """更新设备图标状态"""
+        # 获取对应的设备控件（DeviceIconWidget）
+        for i in range(self.device_progress_layout.count()):
+            item = self.device_progress_layout.itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                if (
+                    isinstance(widget, DeviceIconWidget)
+                    and widget.device_path == device_path
+                ):
+                    if status == "disabled":
+                        widget.set_disabled()
+                    elif status == "ready":
+                        widget.set_ready()
+                    # 注意：flashing, success, failed 状态由DeviceIconWidget内部处理
+                    break
+
     def refresh_device_list(self):
         """刷新设备列表"""
         try:
@@ -763,67 +825,28 @@ class Ui_BatchFlashWindow(object):
             logger.error(f"获取设备列表失败: {str(e)}")
             devices = []
 
-        # 更新设备进度区域
-        # devices = [
-        #     "2-6.122222",
-        #     "2-6.2",
-        #     "2-6.3",
-        #     # "2-6.4",
-        #     # "2-6.5",
-        #     # "2-6.6",
-        # ]
-        # devices += [
-        #     "2-5.2",
-        #     "2-5.3",
-        #     "2-5.4",
-        #     "2-5.5",
-        #     "2-5.6",
-        #     "2-5.7",
-        #     "2-5.8",
-        #     "2-5.9",
-        #     "2-5.10",
-        #     "2-5.11",
-        #     "2-5.12",
-        #     "2-5.13",
-        #     "2-5.14",
-        #     "2-5.15",
-        # ]
+        # 更新设备状态
+        # 1. 标记当前在线的设备为ready状态
+        for device in devices:
+            if device not in self.known_devices:
+                # 新设备，添加到已知设备集合
+                self.known_devices.add(device)
+                self.device_states[device] = "ready"
+                # 添加新设备到界面
+                self.add_device_to_ui(device)
+            else:
+                # 已存在的设备，如果之前是disabled状态，则更新为ready状态
+                if self.device_states.get(device) == "disabled":
+                    self.device_states[device] = "ready"
+                    self.update_device_icon(device, "ready")
 
-        self.update_device_progress_area(devices)
-
-    def update_device_progress_area(self, devices):
-        """更新设备进度区域，使用图标形式显示设备"""
-        # 清除之前的设备控件
-        while self.device_progress_layout.count():
-            child = self.device_progress_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-
-        # 清除之前的设备控件引用
-        self.device_progress_bars.clear()
-
-        # 如果没有设备，显示提示文本
-        if not devices:
-            self.device_progress_placeholder = QLabel("暂无设备连接")
-            self.device_progress_placeholder.setAlignment(Qt.AlignCenter)
-            self.device_progress_layout.addWidget(self.device_progress_placeholder)
-            return
-
-        # 为每个设备创建图标控件
-        for i, device_path in enumerate(devices):
-            # 从设备路径中提取端口号（最后一个部分）
-            port_number = (
-                device_path.split(".")[-1] if "." in device_path else str(i + 1)
-            )
-
-            # 创建设备图标控件
-            device_widget = DeviceIconWidget(device_path, port_number)
-
-            # 保存设备控件引用
-            self.device_progress_bars[device_path] = device_widget.progress_bar
-
-            # 将设备控件添加到布局
-            self.device_progress_layout.addWidget(device_widget)
+        # 2. 标记当前不在线的已知设备为disabled状态
+        for device in self.known_devices:
+            if device not in devices:
+                # 设备已下线，更新状态为disabled
+                if self.device_states.get(device) != "disabled":
+                    self.device_states[device] = "disabled"
+                    self.update_device_icon(device, "disabled")
 
         # 如果启用了自动烧录模式，自动开始烧录新连接的设备
         if self.auto_flash_mode:
@@ -935,7 +958,7 @@ class DeviceIconWidget(QWidget):
         super().__init__(parent)
         self.device_path = device_path
         self.port_number = port_number
-        self.current_status = "ready"  # ready, flashing, success, failed
+        self.current_status = "ready"  # ready, flashing, success, failed, disabled
 
         # 设置固定大小为160x160
         self.setFixedSize(160, 160)
@@ -973,43 +996,52 @@ class DeviceIconWidget(QWidget):
         """
         )
 
-        # 移除了status_label，因为我们现在通过更换图标来表示状态
-
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # 根据状态选择图标
-        icon_filename = "usb_type_c_ready.png"
-        if self.current_status == "flashing":
-            icon_filename = "usb_type_c_ok.png"
-        elif self.current_status == "success":
-            icon_filename = "usb_type_c_ok.png"
-        elif self.current_status == "failed":
-            icon_filename = "usb_type_c_ng.png"
+        try:
+            # 根据状态选择图标
+            icon_filename = "usb_type_c_ready.png"
+            if self.current_status == "flashing":
+                icon_filename = "usb_type_c_ok.png"
+            elif self.current_status == "success":
+                icon_filename = "usb_type_c_ok.png"
+            elif self.current_status == "failed":
+                icon_filename = "usb_type_c_ng.png"
+            elif self.current_status == "disabled":
+                icon_filename = (
+                    "usb_type_c_ready.png"  # 如果没有disabled图标，暂时使用ready图标
+                )
+                # 可以在这里添加一个视觉效果来表示设备已禁用，比如降低透明度
 
-        # 构造图片路径
-        from pathlib import Path
+            # 构造图片路径
+            from pathlib import Path
 
-        current_dir = Path(__file__).parent
-        image_path = current_dir / "assets" / icon_filename
+            current_dir = Path(__file__).parent
+            image_path = current_dir / "assets" / icon_filename
 
-        # 加载图片
-        pixmap = QPixmap()
-        if image_path.exists():
-            pixmap.load(str(image_path))
-        else:
-            # 如果图片不存在，使用默认的矩形
-            painter.setBrush(QColor(200, 200, 200))
-            painter.setPen(Qt.NoPen)
-            painter.drawRect(30, 30, 100, 100)
-            return
+            # 加载图片
+            pixmap = QPixmap()
+            if image_path.exists():
+                pixmap.load(str(image_path))
+                # 如果设备已禁用，降低图片透明度
+                if self.current_status == "disabled":
+                    painter.setOpacity(0.5)
 
-        # 缩放并绘制图片
-        scaled_pixmap = pixmap.scaled(
-            100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation
-        )
-        painter.drawPixmap(30, 30, scaled_pixmap)
+                # 缩放并绘制图片
+                scaled_pixmap = pixmap.scaled(
+                    100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                painter.drawPixmap(30, 30, scaled_pixmap)
+            else:
+                # 如果图片不存在，使用默认的矩形
+                painter.setBrush(QColor(200, 200, 200))
+                painter.setPen(Qt.NoPen)
+                painter.drawRect(30, 30, 100, 100)
+        finally:
+            # 确保painter正确结束
+            painter.end()
 
     def start_flashing(self):
         """开始烧录，显示进度条，更新图标状态"""
@@ -1031,4 +1063,14 @@ class DeviceIconWidget(QWidget):
         else:
             self.current_status = "failed"
 
+        self.update()  # 触发重绘以更新图标
+
+    def set_disabled(self):
+        """设置设备为禁用状态"""
+        self.current_status = "disabled"
+        self.update()  # 触发重绘以更新图标
+
+    def set_ready(self):
+        """设置设备为就绪状态"""
+        self.current_status = "ready"
         self.update()  # 触发重绘以更新图标
