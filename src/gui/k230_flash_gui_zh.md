@@ -81,7 +81,10 @@
 
 软件提供直观的图形化界面，包括菜单栏、主界面和日志区域。
 
-![K230 Flash GUI](images/k230_flash_gui.png)
+- **单机烧录模式**
+![K230 Flash GUI](images/single_flash_mode.png)
+- **批量烧录模式**
+![K230 Flash GUI](images/batch_flash_mode.png)
 
 ### **5.1 菜单栏**  
 

@@ -81,7 +81,11 @@ After entering **Burning Mode**, you can check in **Device Manager** (Windows), 
 
 The software provides an intuitive graphical interface, including menu bar, main interface, and log area.
 
-![K230 Flash GUI](images/k230_flash_gui.png)
+- **Single Flash Mode**:  
+![K230 Flash GUI](images/single_flash_mode.png)
+
+- **Batch Flash Mode**:
+![K230 Flash GUI](images/batch_flash_mode.png)
 
 ### **5.1 Menu Bar**  
 

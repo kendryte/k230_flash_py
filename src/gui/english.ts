@@ -4,42 +4,50 @@
 <context>
     <name>AdvancedSettingsDialog</name>
     <message>
-        <location filename="advanced_settings.py" line="142"/>
+        <location filename="advanced_settings.py" line="153"/>
+        <location filename="advanced_settings.py" line="362"/>
         <source>高级设置</source>
         <translation>Advanced settings</translation>
     </message>
     <message>
-        <location filename="advanced_settings.py" line="143"/>
+        <location filename="advanced_settings.py" line="156"/>
+        <location filename="advanced_settings.py" line="365"/>
         <source>日志等级：</source>
         <translation>Log level:</translation>
     </message>
     <message>
-        <location filename="advanced_settings.py" line="144"/>
+        <location filename="advanced_settings.py" line="159"/>
+        <location filename="advanced_settings.py" line="368"/>
         <source>自定义 Loader 文件：</source>
         <translation>Custom loader file:</translation>
     </message>
     <message>
-        <location filename="advanced_settings.py" line="145"/>
+        <location filename="advanced_settings.py" line="162"/>
+        <location filename="advanced_settings.py" line="371"/>
         <source>选择文件</source>
         <translation>Browser to file...</translation>
     </message>
     <message>
-        <location filename="advanced_settings.py" line="146"/>
+        <location filename="advanced_settings.py" line="165"/>
+        <location filename="advanced_settings.py" line="374"/>
         <source>Loader 地址：</source>
         <translation>Loader address:</translation>
     </message>
     <message>
-        <location filename="advanced_settings.py" line="147"/>
+        <location filename="advanced_settings.py" line="168"/>
+        <location filename="advanced_settings.py" line="377"/>
         <source>烧录完成后自动重启</source>
         <translation>Reboot after programming</translation>
     </message>
     <message>
-        <location filename="advanced_settings.py" line="148"/>
+        <location filename="advanced_settings.py" line="171"/>
+        <location filename="advanced_settings.py" line="380"/>
         <source>保存</source>
         <translation>Save</translation>
     </message>
     <message>
-        <location filename="advanced_settings.py" line="149"/>
+        <location filename="advanced_settings.py" line="174"/>
+        <location filename="advanced_settings.py" line="383"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
@@ -47,14 +55,74 @@
 <context>
     <name>BatchFlash</name>
     <message>
-        <location filename="batch_flash.py" line="11"/>
         <source>批量烧录</source>
-        <translation>Batch Programming</translation>
+        <translation type="vanished">Batch Programming</translation>
     </message>
     <message>
-        <location filename="batch_flash.py" line="16"/>
         <source>正在建设中...</source>
-        <translation>Under construction...</translation>
+        <translation type="vanished">Under construction...</translation>
+    </message>
+    <message>
+        <location filename="batch_flash.py" line="229"/>
+        <source>镜像文件：</source>
+        <translation>Image file:</translation>
+    </message>
+    <message>
+        <location filename="batch_flash.py" line="232"/>
+        <source>添加镜像文件</source>
+        <translation>Browser to image file</translation>
+    </message>
+    <message>
+        <location filename="batch_flash.py" line="235"/>
+        <source>镜像文件内容：</source>
+        <translation>Image content:</translation>
+    </message>
+    <message>
+        <location filename="batch_flash.py" line="239"/>
+        <source>目标存储介质：</source>
+        <translation>Target media type:</translation>
+    </message>
+    <message>
+        <location filename="batch_flash.py" line="250"/>
+        <source>批量烧录控制：</source>
+        <translation>Batch programming</translation>
+    </message>
+    <message>
+        <location filename="batch_flash.py" line="251"/>
+        <location filename="batch_flash.py" line="863"/>
+        <source>开始烧录</source>
+        <translation>Start programming</translation>
+    </message>
+    <message>
+        <location filename="batch_flash.py" line="254"/>
+        <location filename="batch_flash.py" line="864"/>
+        <source>自动烧录</source>
+        <translation>Auto programming mode</translation>
+    </message>
+    <message>
+        <location filename="batch_flash.py" line="262"/>
+        <source>设备烧录进度：</source>
+        <translation>Device list</translation>
+    </message>
+    <message>
+        <location filename="batch_flash.py" line="283"/>
+        <source>镜像名称</source>
+        <translation>Image name</translation>
+    </message>
+    <message>
+        <location filename="batch_flash.py" line="284"/>
+        <source>烧录地址</source>
+        <translation>Address</translation>
+    </message>
+    <message>
+        <location filename="batch_flash.py" line="285"/>
+        <source>镜像大小</source>
+        <translation>Size</translation>
+    </message>
+    <message>
+        <location filename="batch_flash.py" line="865"/>
+        <source>停止自动烧录</source>
+        <translation>Stop auto programming</translation>
     </message>
 </context>
 <context>
@@ -96,6 +164,10 @@
     </message>
     <message>
         <location filename="main.py" line="116"/>
+        <source>K230 Flash GUI-{self.version}</source>
+        <translation></translation>
+    </message>
+    <message>
         <location filename="main.py" line="245"/>
         <source>K230 Flash Tool-{self.version}</source>
         <translation>K230 Flash GUI-{self.version}</translation>

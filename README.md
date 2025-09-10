@@ -216,11 +216,13 @@ if __name__ == "__main__":
 
 In addition to the command-line tool and Python library, this project also provides a feature-complete graphical user interface tool **K230 Flash GUI**, allowing users to perform firmware flashing operations through an intuitive interface.
 
+<img src="https://raw.githubusercontent.com/kendryte/k230_flash_py/main/src/gui/images/single_flash_mode.png" width="600">
+
 ### 📥 Download and Installation
 
 You can download the latest version of pre-compiled executable files from the [GitHub Releases](https://github.com/kendryte/k230_flash_py/releases) page. After downloading, run directly without installing Python environment.
 
-For detailed usage instructions of the GUI tool, please refer to [K230 Flash GUI User Manual](src/gui/k230_flash_gui.md).
+For detailed usage instructions of the GUI tool, please refer to [K230 Flash GUI User Manual](src/gui/k230_flash_gui_en.md).
 
 ---
 
