@@ -26,6 +26,35 @@ class CommonWidgetStyles:
             QPushButton:hover {
                 background-color: #45a049;
             }
+            QPushButton:pressed {
+                background-color: #3d8b40;
+                padding: 10px 14px 6px 18px;  /* 模拟按下效果 */
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+            }
+        """
+
+    @staticmethod
+    def QPushButton_Flash_css():
+        return """
+            QPushButton {
+                background-color: #4CAF50;
+                border: none;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 16px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:pressed {
+                background-color: #3d8b40;
+                padding: 10px 14px 6px 18px;  /* 模拟按下效果 */
+                border: 2px solid #2d6b30;
+            }
             QPushButton:disabled {
                 background-color: #cccccc;
             }

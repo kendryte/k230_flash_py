@@ -89,38 +89,37 @@
     </message>
     <message>
         <location filename="batch_flash.py" line="251"/>
-        <location filename="batch_flash.py" line="863"/>
+        <location filename="batch_flash.py" line="913"/>
         <source>开始烧录</source>
         <translation>Start programming</translation>
     </message>
     <message>
-        <location filename="batch_flash.py" line="254"/>
-        <location filename="batch_flash.py" line="864"/>
+        <location filename="batch_flash.py" line="914"/>
         <source>自动烧录</source>
         <translation>Auto programming mode</translation>
     </message>
     <message>
-        <location filename="batch_flash.py" line="262"/>
+        <location filename="batch_flash.py" line="264"/>
         <source>设备烧录进度：</source>
         <translation>Device list</translation>
     </message>
     <message>
-        <location filename="batch_flash.py" line="283"/>
+        <location filename="batch_flash.py" line="285"/>
         <source>镜像名称</source>
         <translation>Image name</translation>
     </message>
     <message>
-        <location filename="batch_flash.py" line="284"/>
+        <location filename="batch_flash.py" line="286"/>
         <source>烧录地址</source>
         <translation>Address</translation>
     </message>
     <message>
-        <location filename="batch_flash.py" line="285"/>
+        <location filename="batch_flash.py" line="287"/>
         <source>镜像大小</source>
         <translation>Size</translation>
     </message>
     <message>
-        <location filename="batch_flash.py" line="865"/>
+        <location filename="batch_flash.py" line="915"/>
         <source>停止自动烧录</source>
         <translation>Stop auto programming</translation>
     </message>

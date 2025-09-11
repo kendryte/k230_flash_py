@@ -249,9 +249,11 @@ class Ui_BatchFlashWindow(object):
             QCoreApplication.translate("BatchFlash", "批量烧录控制：")
         )
         self.start_button.setText(QCoreApplication.translate("BatchFlash", "开始烧录"))
-        self.auto_flash_checkbox.setText(
-            QCoreApplication.translate("BatchFlash", "自动烧录")
-        )
+        # 根据当前状态设置自动烧录复选框的文本
+        if self.auto_flash_mode:
+            self.auto_flash_checkbox.setText("取消自动烧录")
+        else:
+            self.auto_flash_checkbox.setText("自动烧录")
         # 移除高级设置按钮的文本设置
         # self.advanced_setting_button.setText(
         #     QCoreApplication.translate("BatchFlash", "高级设置")
@@ -516,7 +518,7 @@ class Ui_BatchFlashWindow(object):
 
         # 创建 "开始烧录" 按钮
         self.start_button = QPushButton("开始烧录")
-        self.start_button.setStyleSheet(CommonWidgetStyles.QPushButton_css())
+        self.start_button.setStyleSheet(CommonWidgetStyles.QPushButton_Flash_css())
         self.start_button.clicked.connect(self.start_batch_flash)
         # 增大按钮高度
         self.start_button.setFixedHeight(60)
@@ -564,18 +566,29 @@ class Ui_BatchFlashWindow(object):
 
     def start_batch_flash(self):
         """开始批量烧录"""
-        # 验证输入
+
+        self.start_button.setEnabled(False)
+        self.start_button.setText("烧录中...")
+        # disable flash checkbox
+        self.auto_flash_checkbox.setEnabled(False)
+
         if not self.validate_inputs():
+            if not self.auto_flash_mode:
+                self.start_button.setEnabled(True)
+                self.start_button.setText("开始烧录")
             return
 
-        # 获取所有已知设备中处于ready状态的设备
+        # 获取所有已知设备中处于ready状态的设备（只处理点击时的ready设备）
         ready_devices = [
             device
             for device in self.known_devices
             if self.device_states.get(device) == "ready"
         ]
         if not ready_devices:
-            # logger.warning("没有处于ready状态的设备进行烧录")
+            logger.warning("没有处于ready状态的设备进行烧录")
+            # 重新启用按钮
+            self.start_button.setEnabled(True)
+            self.start_button.setText("开始烧录")
             return
 
         # 获取配置参数
@@ -644,13 +657,27 @@ class Ui_BatchFlashWindow(object):
 
     def toggle_auto_flash_mode(self):
         """切换自动烧录模式"""
-        # 对于复选框，stateChanged信号会传递一个状态值
-        # Qt.Checked 表示选中，Qt.Unchecked 表示未选中
         self.auto_flash_mode = self.auto_flash_checkbox.isChecked()
         if self.auto_flash_mode:
+            self.auto_flash_checkbox.setText("取消自动烧录")
             logger.info("已启用自动烧录模式")
+
+            # 自动烧录模式下，开始按钮始终保持可用
+            self.start_button.setEnabled(False)
+            self.start_button.setText("烧录中...")
+
+            # 自动开始当前 ready 设备
+            self.start_batch_flash_for_new_devices()
         else:
+            self.auto_flash_checkbox.setText("自动烧录")
             logger.info("已禁用自动烧录模式")
+
+            # 检查是否所有设备都已完成烧录，如果完成直接恢复按钮，如果未完成，则在所有设备完成后恢复按钮
+            if not self.flash_threads:
+                # 全部完成烧录：所有设备完成后恢复按钮
+                self.start_button.setEnabled(True)
+                self.start_button.setText("开始烧录")
+                self.auto_flash_checkbox.setText("自动烧录")
 
     def validate_inputs(self):
         """验证输入有效性"""
@@ -753,6 +780,7 @@ class Ui_BatchFlashWindow(object):
             thread.wait(5000)
             # 从字典中移除线程引用
             del self.flash_threads[device_path]
+            logger.debug(f"设备 {device_path} 的烧录线程已结束并移除")
 
         # 更新设备状态
         if success:
@@ -774,6 +802,15 @@ class Ui_BatchFlashWindow(object):
                 ):
                     widget.finish_flashing(success)
                     break
+
+        # 检查是否所有设备都已完成烧录
+        if not self.flash_threads:
+            if not self.auto_flash_mode:
+                # 正常模式：所有设备完成后恢复按钮
+                self.start_button.setEnabled(True)
+                self.start_button.setText("开始烧录")
+                self.auto_flash_checkbox.setEnabled(True)
+                self.auto_flash_checkbox.setText("自动烧录")
 
     def add_device_to_ui(self, device_path):
         """添加新设备到界面"""
@@ -816,10 +853,14 @@ class Ui_BatchFlashWindow(object):
             device_list_json = list_devices()
             device_list = json.loads(device_list_json)
             devices = [dev["port_path"] for dev in device_list]
+            logger.info(f"检测到设备: {devices}")
         except Exception as e:
             logger.error(f"获取设备列表失败: {str(e)}")
             devices = []
             return None
+
+        # 记录新添加的设备
+        new_devices = []
 
         # 更新设备状态
         # 1. 标记当前在线的设备为ready状态
@@ -830,11 +871,15 @@ class Ui_BatchFlashWindow(object):
                 self.device_states[device] = "ready"
                 # 添加新设备到界面
                 self.add_device_to_ui(device)
+                new_devices.append(device)
             else:
                 # 已存在的设备，如果之前是disabled状态，则更新为ready状态
                 if self.device_states.get(device) == "disabled":
                     self.device_states[device] = "ready"
                     self.update_device_icon(device, "ready")
+                    # 如果设备重新连接并且处于烧录状态，标记为新设备以便自动烧录
+                    if not self.start_button.isEnabled():
+                        new_devices.append(device)
 
         # 2. 标记当前不在线的已知设备为disabled状态
         for device in self.known_devices:
@@ -844,9 +889,14 @@ class Ui_BatchFlashWindow(object):
                     self.device_states[device] = "disabled"
                     self.update_device_icon(device, "disabled")
 
-        # 如果启用了自动烧录模式，自动开始烧录新连接的设备
+        # 如果启用了自动烧录模式且当前正在烧录中，自动开始烧录新连接的设备
         if self.auto_flash_mode:
-            self.start_batch_flash()
+            # 只处理新添加的设备或重新连接的设备
+            for device in self.known_devices:
+                if self.device_states.get(device) == "ready":
+                    # 为新设备启动烧录
+                    self.start_batch_flash_for_new_devices()
+                    break  # 只需要调用一次，方法内部会处理所有ready状态的设备
 
     def show_advanced_settings(self):
         dialog = AdvancedSettingsDialog(self)
@@ -865,6 +915,84 @@ class Ui_BatchFlashWindow(object):
             "stop_auto_flash": QCoreApplication.translate("BatchFlash", "停止自动烧录"),
         }
         return translations.get(key, key)
+
+    def start_batch_flash_for_new_devices(self):
+        """为新连接的设备开始批量烧录（自动烧录模式专用）"""
+        # 只处理当前处于ready状态的新设备
+        ready_devices = [
+            device
+            for device in self.known_devices
+            if self.device_states.get(device) == "ready"
+        ]
+
+        # 如果没有设备需要烧录，直接返回
+        if not ready_devices:
+            return
+
+        # 获取配置参数
+        config = utils.load_config()
+        log_level = config.get("AdvancedSettings", "log_level", fallback="INFO")
+        custom_loader = config.get("AdvancedSettings", "custom_loader", fallback=None)
+        loader_address = int(
+            config.get("AdvancedSettings", "loader_address", fallback="0x80360000"), 0
+        )
+        auto_reboot = config.getboolean(
+            "AdvancedSettings", "auto_reboot", fallback=False
+        )
+
+        # 收集参数
+        params = {
+            "auto_reboot": auto_reboot,
+            "custom_loader": custom_loader,
+            "loader_address": loader_address,
+            "log_level": log_level,
+            "media_type": self.get_media_type(),
+            "kdimg-path": (
+                self.file_path_edit.text() if self.img_list_mode == "kdimg" else None
+            ),
+            "addr_filename": self.get_addr_filename_pairs(),
+            "selected_partitions": (
+                self.get_selected_partition_names()
+                if self.img_list_mode == "kdimg"
+                else None
+            ),
+        }
+
+        logger.info(f"自动烧录新设备，设备: {ready_devices}")
+
+        # 为每个处于ready状态的设备启动烧录线程
+        for device_path in ready_devices:
+            # 检查设备是否已经在烧录中
+            if device_path in self.flash_threads:
+                logger.warning(f"设备 {device_path} 已在烧录中，跳过")
+                continue
+
+            # 更新设备状态为flashing
+            self.device_states[device_path] = "flashing"
+            self.update_device_icon(device_path, "flashing")
+
+            # 通知设备控件开始烧录
+            if device_path in self.device_progress_bars:
+                # 获取对应的设备控件（DeviceIconWidget）
+                for i in range(self.device_progress_layout.count()):
+                    item = self.device_progress_layout.itemAt(i)
+                    if item and item.widget():
+                        widget = item.widget()
+                        if (
+                            isinstance(widget, DeviceIconWidget)
+                            and widget.device_path == device_path
+                        ):
+                            widget.start_flashing()
+                            break
+
+            # 创建并启动线程
+            flash_thread = DeviceFlashThread(device_path, params)
+            flash_thread.progress_signal.connect(self.update_device_progress)
+            flash_thread.finished_signal.connect(self.handle_device_flash_result)
+            flash_thread.start()
+
+            # 保存线程引用
+            self.flash_threads[device_path] = flash_thread
 
 
 class FlowLayout(QLayout):
