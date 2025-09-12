@@ -619,7 +619,7 @@ def handle_bootrom_mode(
             raise RuntimeError(f"Loader操作失败: {e}")
 
         logger.info("loader 写入成功，等待设备切换至 U-Boot 模式")
-        time.sleep(1)
+        time.sleep(0.5)
     except FileNotFoundError as e:
         logger.error(f"文件错误: {e}")
         raise

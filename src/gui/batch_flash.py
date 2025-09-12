@@ -206,6 +206,7 @@ class Ui_BatchFlashWindow(object):
         self.device_states = (
             {}
         )  # 跟踪设备状态 {'device_path': 'ready'/'disabled'/'flashing'/'success'/'failed'}
+        
 
         # 设备相关状态（移除了device_checkboxes和device_status_labels）
         # self.device_checkboxes = {}  # 存储设备复选框
@@ -222,6 +223,29 @@ class Ui_BatchFlashWindow(object):
 
         # 初始化界面文本（必须在所有UI元素创建完成后调用）
         self.update_ui_text()
+
+    def set_device_state(self, device_path, state):
+        """设置设备状态"""
+        old_state = self.device_states.get(device_path, "unknown")
+        # 如果正在烧录中，因为会有bootm至uboot切换，update device list时会有missed device, 所以在烧录进行中时，禁止更新状态
+        if old_state == "flashing" and device_path in self.flash_threads:
+            logger.debug("只有烧录线程退出后，才能设置新状态: {device_path}")
+            return
+        self.device_states[device_path] = state
+        logger.debug(f"设备状态变更: {device_path} 从 {old_state} 变为 {state}")
+
+    def get_device_state(self, device_path):
+        """获取设备状态"""
+        state = self.device_states.get(device_path, "unknown")
+        logger.debug(f"查询设备状态: {device_path} 当前状态为 {state}")
+        return state
+
+    def is_device_in_state(self, device_path, state):
+        """检查设备是否处于指定状态"""
+        current_state = self.get_device_state(device_path)
+        result = current_state == state
+        logger.debug(f"检查设备状态: {device_path} 是否为 {state}: {result}")
+        return result
 
     def update_ui_text(self):
         self.image_file_label.setText(
@@ -588,12 +612,13 @@ class Ui_BatchFlashWindow(object):
 
     def start_batch_flash(self):
         """开始批量烧录"""
-
+        # 禁用开始按钮，防止重复点击
         self.start_button.setEnabled(False)
         self.start_button.setText(QCoreApplication.translate("BatchFlash", "烧录中..."))
         # disable flash checkbox
         self.auto_flash_checkbox.setEnabled(False)
 
+        # 验证输入
         if not self.validate_inputs():
             if not self.auto_flash_mode:
                 self.start_button.setEnabled(True)
@@ -606,7 +631,7 @@ class Ui_BatchFlashWindow(object):
         ready_devices = [
             device
             for device in self.known_devices
-            if self.device_states.get(device) == "ready"
+            if self.is_device_in_state(device, "ready")
         ]
         if not ready_devices:
             logger.warning("没有处于ready状态的设备进行烧录")
@@ -655,7 +680,7 @@ class Ui_BatchFlashWindow(object):
                 continue
 
             # 更新设备状态为flashing
-            self.device_states[device_path] = "flashing"
+            self.set_device_state(device_path, "flashing")
             self.update_device_icon(device_path, "flashing")
 
             # 通知设备控件开始烧录
@@ -820,10 +845,10 @@ class Ui_BatchFlashWindow(object):
 
         # 更新设备状态
         if success:
-            self.device_states[device_path] = "success"
+            self.set_device_state(device_path, "success")
             logger.info(f"设备 {device_path} 烧录成功")
         else:
-            self.device_states[device_path] = "failed"
+            self.set_device_state(device_path, "failed")
             logger.error(f"设备 {device_path} 烧录失败: {error_message}")
 
         # 通知设备控件完成烧录
@@ -867,8 +892,8 @@ class Ui_BatchFlashWindow(object):
         self.device_progress_layout.addWidget(device_widget)
 
         # 初始化设备状态为ready
-        self.device_states[device_path] = "ready"
-
+        self.set_device_state(device_path, "ready")
+        
     def update_device_icon(self, device_path, status):
         """更新设备图标状态"""
         # 获取对应的设备控件（DeviceIconWidget）
@@ -908,32 +933,35 @@ class Ui_BatchFlashWindow(object):
             if device not in self.known_devices:
                 # 新设备，添加到已知设备集合
                 self.known_devices.add(device)
-                self.device_states[device] = "ready"
+                self.set_device_state(device, "ready")
                 # 添加新设备到界面
                 self.add_device_to_ui(device)
                 new_devices.append(device)
+                
             else:
                 # 已存在的设备，如果之前是disabled状态，则更新为ready状态
-                if self.device_states.get(device) == "disabled":
-                    self.device_states[device] = "ready"
+                if self.is_device_in_state(device, "disabled"):
+                    self.set_device_state(device, "ready")
                     self.update_device_icon(device, "ready")
                     # 如果设备重新连接并且处于烧录状态，标记为新设备以便自动烧录
                     if not self.start_button.isEnabled():
                         new_devices.append(device)
+                
 
         # 2. 标记当前不在线的已知设备为disabled状态
         for device in self.known_devices:
             if device not in devices:
                 # 设备已下线，更新状态为disabled
-                if self.device_states.get(device) != "disabled":
-                    self.device_states[device] = "disabled"
+                if not self.is_device_in_state(device, "disabled"):
+                    self.set_device_state(device, "disabled")
                     self.update_device_icon(device, "disabled")
+                
 
         # 如果启用了自动烧录模式且当前正在烧录中，自动开始烧录新连接的设备
-        if self.auto_flash_mode:
+        if self.auto_flash_mode and not self.start_button.isEnabled():
             # 只处理新添加的设备或重新连接的设备
-            for device in self.known_devices:
-                if self.device_states.get(device) == "ready":
+            for device in new_devices:
+                if self.is_device_in_state(device, "ready"):
                     # 为新设备启动烧录
                     self.start_batch_flash_for_new_devices()
                     break  # 只需要调用一次，方法内部会处理所有ready状态的设备
@@ -962,7 +990,7 @@ class Ui_BatchFlashWindow(object):
         ready_devices = [
             device
             for device in self.known_devices
-            if self.device_states.get(device) == "ready"
+            if self.is_device_in_state(device, "ready")
         ]
 
         # 如果没有设备需要烧录，直接返回
@@ -1008,7 +1036,7 @@ class Ui_BatchFlashWindow(object):
                 continue
 
             # 更新设备状态为flashing
-            self.device_states[device_path] = "flashing"
+            self.set_device_state(device_path, "flashing")
             self.update_device_icon(device_path, "flashing")
 
             # 通知设备控件开始烧录
@@ -1161,6 +1189,11 @@ class DeviceIconWidget(QWidget):
         """
         )
 
+        # 添加闪烁定时器
+        self.blink_timer = QTimer(self)
+        self.blink_timer.timeout.connect(self._toggle_blink)
+        self.blink_visible = True
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
@@ -1193,8 +1226,27 @@ class DeviceIconWidget(QWidget):
             # 确保painter正确结束
             painter.end()
 
+    def _toggle_blink(self):
+        """切换端口号标签的可见性以实现闪烁效果"""
+        self.blink_visible = not self.blink_visible
+        if self.blink_visible:
+            self.port_label.setStyleSheet(
+                "color: white; font-weight: bold; background-color: rgba(0, 128, 0, 128); border-radius: 2px;"
+            )
+        else:
+            self.port_label.setStyleSheet(
+                "color: white; font-weight: bold; background-color: rgba(0, 0, 0, 128); border-radius: 2px;"
+            )
+
     def start_flashing(self):
         """开始烧录，显示进度条，更新图标状态"""
+        # 停止可能正在运行的闪烁定时器
+        if self.blink_timer.isActive():
+            self.blink_timer.stop()
+            self.port_label.setStyleSheet(
+                "color: white; font-weight: bold; background-color: rgba(0, 0, 0, 128); border-radius: 2px;"
+            )
+
         self.current_status = "flashing"
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
@@ -1206,9 +1258,17 @@ class DeviceIconWidget(QWidget):
 
     def finish_flashing(self, success):
         """完成烧录，隐藏进度条，更新图标状态"""
+        # 停止可能正在运行的闪烁定时器
+        if self.blink_timer.isActive():
+            self.blink_timer.stop()
+            self.port_label.setStyleSheet(
+                "color: white; font-weight: bold; background-color: rgba(0, 0, 0, 128); border-radius: 2px;"
+            )
 
         if success:
             self.current_status = "success"
+            # 启动闪烁定时器，实现缓慢闪烁效果（500ms间隔）
+            self.blink_timer.start(500)
         else:
             self.progress_bar.setVisible(False)
             self.current_status = "failed"
@@ -1217,11 +1277,25 @@ class DeviceIconWidget(QWidget):
 
     def set_disabled(self):
         """设置设备为禁用状态"""
+        # 停止可能正在运行的闪烁定时器
+        if self.blink_timer.isActive():
+            self.blink_timer.stop()
+            self.port_label.setStyleSheet(
+                "color: white; font-weight: bold; background-color: rgba(0, 0, 0, 128); border-radius: 2px;"
+            )
+
         self.current_status = "disabled"
         self.progress_bar.setVisible(False)
         self.update()  # 触发重绘以更新图标
 
     def set_ready(self):
         """设置设备为就绪状态"""
+        # 停止可能正在运行的闪烁定时器
+        if self.blink_timer.isActive():
+            self.blink_timer.stop()
+            self.port_label.setStyleSheet(
+                "color: white; font-weight: bold; background-color: rgba(0, 0, 0, 128); border-radius: 2px;"
+            )
+
         self.current_status = "ready"
         self.update()  # 触发重绘以更新图标
