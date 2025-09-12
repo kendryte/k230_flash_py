@@ -97,25 +97,33 @@ class SingleFlash(QMainWindow):
         self.log_output = QTextEdit(self)
         self.log_output.setReadOnly(True)
 
+        self.max_log_lines = 2000  # 最多保留 1000 行
+
         self.ui = Ui_MainWindow(log_output_widget=self.log_output)
         self.ui.setupUi(self)
 
     def init_logging_display(self):
-        # 初始化日志文件监控
+        """初始化日志文件监控（不加载历史日志）"""
         log_file_path = FULL_LOG_FILE_PATH
-        self.log_monitor = LogFileMonitor(log_file_path)
+        self.log_monitor = LogFileMonitor(log_file_path, start_at_end=True)
         self.log_monitor.new_content.connect(self.append_log_content)
 
     @Slot(str)
     def append_log_content(self, content):
-        """将新增日志内容追加到 QTextEdit"""
-        self.log_output.moveCursor(QtGui.QTextCursor.End)  # 移动光标到末尾
+        """将新增日志内容追加到 QTextEdit，限制显示行数"""
+        self.log_output.moveCursor(QtGui.QTextCursor.End)
         self.log_output.insertPlainText(content)
         self.log_output.ensureCursorVisible()
 
-        # 自动滚动到底部
-        scrollbar = self.log_output.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        # 限制最大行数
+        doc = self.log_output.document()
+        if doc.blockCount() > self.max_log_lines:
+            cursor = self.log_output.textCursor()
+            cursor.movePosition(QtGui.QTextCursor.Start)
+            for _ in range(doc.blockCount() - self.max_log_lines):
+                cursor.select(QtGui.QTextCursor.LineUnderCursor)
+                cursor.removeSelectedText()
+                cursor.deleteChar()
 
 
 class Ui_MainWindow(object):
