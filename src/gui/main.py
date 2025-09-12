@@ -228,10 +228,14 @@ class FlashTool(QMainWindow):
 
         # **更新所有窗口 UI 语言**
         self.update_ui_text()
-        if hasattr(self, "single_flash_window"):
+
+        # 只更新当前显示的窗口 UI 语言
+        if self.current_mode == "single" and hasattr(self, "single_flash_window"):
             self.single_flash_window.ui.update_ui_text()
-        if hasattr(self, "batch_flash_window"):
+        elif self.current_mode == "batch" and hasattr(self, "batch_flash_window"):
             self.batch_flash_window.ui.update_ui_text()
+
+        # 更新高级设置对话框 UI 语言（如果存在且正在显示）
         if hasattr(self, "advanced_settings_dialog"):
             self.advanced_settings_dialog.update_ui_text()
 

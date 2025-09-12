@@ -108,7 +108,7 @@ class DeviceFlashThread(QThread):
     def run(self):
         def gui_progress_callback(current, total):
             percent = int(current / total * 100) if total else 0
-            logger.debug(f"设备 {self.device_path} 进度: {percent}")
+            logger.debug(f"设备 {self.device_path} 进度: {percent}%")
             self.progress_signal.emit(self.device_path, current, total, percent)
 
         # 构造命令行参数
@@ -251,9 +251,13 @@ class Ui_BatchFlashWindow(object):
         self.start_button.setText(QCoreApplication.translate("BatchFlash", "开始烧录"))
         # 根据当前状态设置自动烧录复选框的文本
         if self.auto_flash_mode:
-            self.auto_flash_checkbox.setText("取消自动烧录")
+            self.auto_flash_checkbox.setText(
+                QCoreApplication.translate("BatchFlash", "取消自动烧录")
+            )
         else:
-            self.auto_flash_checkbox.setText("自动烧录")
+            self.auto_flash_checkbox.setText(
+                QCoreApplication.translate("BatchFlash", "自动烧录")
+            )
         # 移除高级设置按钮的文本设置
         # self.advanced_setting_button.setText(
         #     QCoreApplication.translate("BatchFlash", "高级设置")
@@ -294,7 +298,9 @@ class Ui_BatchFlashWindow(object):
         layout = QHBoxLayout(widget)
 
         # 创建 "镜像" 标签
-        self.image_file_label = QLabel("镜像文件：")
+        self.image_file_label = QLabel(
+            QCoreApplication.translate("BatchFlash", "镜像文件：")
+        )
         layout.addWidget(self.image_file_label)
 
         # 创建 QLineEdit 用于显示文件路径
@@ -303,7 +309,9 @@ class Ui_BatchFlashWindow(object):
         layout.addWidget(self.file_path_edit)
 
         # 创建文件选择按钮
-        self.file_dialog_button = QPushButton("添加镜像文件")
+        self.file_dialog_button = QPushButton(
+            QCoreApplication.translate("BatchFlash", "添加镜像文件")
+        )
         layout.addWidget(self.file_dialog_button)
 
         # 连接按钮点击事件
@@ -320,9 +328,11 @@ class Ui_BatchFlashWindow(object):
         # 打开文件对话框并获取文件路径
         file_path, _ = QFileDialog.getOpenFileName(
             parent=None,  # Use parent=None to make it a top-level dialog
-            caption="选择镜像文件",
+            caption=QCoreApplication.translate("BatchFlash", "选择镜像文件"),
             dir=last_image_path,  # Set initial directory
-            filter="镜像文件 (*.bin *.img *.kdimg *.zip *.gz *.tgz)",
+            filter=QCoreApplication.translate(
+                "BatchFlash", "镜像文件 (*.bin *.img *.kdimg *.zip *.gz *.tgz)"
+            ),
         )
         if file_path:  # 如果用户选择了文件
             self.file_path_edit.setText(file_path)  # 将文件路径显示在 QLineEdit 中
@@ -423,7 +433,9 @@ class Ui_BatchFlashWindow(object):
 
     def create_table(self):
         # 创建一个 QGroupBox 作为容器
-        self.image_table_groupbox = QGroupBox("镜像文件内容：")
+        self.image_table_groupbox = QGroupBox(
+            QCoreApplication.translate("BatchFlash", "镜像文件内容：")
+        )
         layout = QVBoxLayout(self.image_table_groupbox)  # 将布局应用到 QGroupBox
 
         # 创建 QTableWidget
@@ -480,7 +492,9 @@ class Ui_BatchFlashWindow(object):
 
     def create_target_media_region(self):
         # 创建一个 QGroupBox 作为容器
-        self.target_media_region_group = QGroupBox("目标存储介质：")
+        self.target_media_region_group = QGroupBox(
+            QCoreApplication.translate("BatchFlash", "目标存储介质：")
+        )
 
         layout = QHBoxLayout(self.target_media_region_group)  # 将布局应用到 QGroupBox
 
@@ -512,19 +526,25 @@ class Ui_BatchFlashWindow(object):
 
     def create_batch_control_region(self):
         # 创建一个 QGroupBox 作为容器
-        self.batch_control_group = QGroupBox("批量烧录控制：")
+        self.batch_control_group = QGroupBox(
+            QCoreApplication.translate("BatchFlash", "批量烧录控制：")
+        )
         layout = QVBoxLayout(self.batch_control_group)
         layout.setSpacing(10)  # 增加按钮之间的间距
 
         # 创建 "开始烧录" 按钮
-        self.start_button = QPushButton("开始烧录")
+        self.start_button = QPushButton(
+            QCoreApplication.translate("BatchFlash", "开始烧录")
+        )
         self.start_button.setStyleSheet(CommonWidgetStyles.QPushButton_Flash_css())
         self.start_button.clicked.connect(self.start_batch_flash)
         # 增大按钮高度
         self.start_button.setFixedHeight(60)
 
         # 创建 "自动烧录" 复选框
-        self.auto_flash_checkbox = QCheckBox("自动烧录")
+        self.auto_flash_checkbox = QCheckBox(
+            QCoreApplication.translate("BatchFlash", "自动烧录")
+        )
         self.auto_flash_checkbox.stateChanged.connect(self.toggle_auto_flash_mode)
         # 设置复选框样式
         self.auto_flash_checkbox.setStyleSheet("QCheckBox { font-size: 14px; }")
@@ -538,7 +558,9 @@ class Ui_BatchFlashWindow(object):
 
     def create_device_progress_region(self):
         # 创建一个 QGroupBox 作为容器
-        self.device_progress_group = QGroupBox("设备烧录进度：")
+        self.device_progress_group = QGroupBox(
+            QCoreApplication.translate("BatchFlash", "设备烧录进度：")
+        )
 
         # 创建一个滚动区域以容纳大量设备
         self.device_progress_scroll = QtWidgets.QScrollArea()
@@ -568,14 +590,16 @@ class Ui_BatchFlashWindow(object):
         """开始批量烧录"""
 
         self.start_button.setEnabled(False)
-        self.start_button.setText("烧录中...")
+        self.start_button.setText(QCoreApplication.translate("BatchFlash", "烧录中..."))
         # disable flash checkbox
         self.auto_flash_checkbox.setEnabled(False)
 
         if not self.validate_inputs():
             if not self.auto_flash_mode:
                 self.start_button.setEnabled(True)
-                self.start_button.setText("开始烧录")
+                self.start_button.setText(
+                    QCoreApplication.translate("BatchFlash", "开始烧录")
+                )
             return
 
         # 获取所有已知设备中处于ready状态的设备（只处理点击时的ready设备）
@@ -588,7 +612,9 @@ class Ui_BatchFlashWindow(object):
             logger.warning("没有处于ready状态的设备进行烧录")
             # 重新启用按钮
             self.start_button.setEnabled(True)
-            self.start_button.setText("开始烧录")
+            self.start_button.setText(
+                QCoreApplication.translate("BatchFlash", "开始烧录")
+            )
             return
 
         # 获取配置参数
@@ -659,25 +685,35 @@ class Ui_BatchFlashWindow(object):
         """切换自动烧录模式"""
         self.auto_flash_mode = self.auto_flash_checkbox.isChecked()
         if self.auto_flash_mode:
-            self.auto_flash_checkbox.setText("取消自动烧录")
+            self.auto_flash_checkbox.setText(
+                QCoreApplication.translate("BatchFlash", "取消自动烧录")
+            )
             logger.info("已启用自动烧录模式")
 
             # 自动烧录模式下，开始按钮始终保持可用
             self.start_button.setEnabled(False)
-            self.start_button.setText("烧录中...")
+            self.start_button.setText(
+                QCoreApplication.translate("BatchFlash", "烧录中...")
+            )
 
             # 自动开始当前 ready 设备
             self.start_batch_flash_for_new_devices()
         else:
-            self.auto_flash_checkbox.setText("自动烧录")
+            self.auto_flash_checkbox.setText(
+                QCoreApplication.translate("BatchFlash", "自动烧录")
+            )
             logger.info("已禁用自动烧录模式")
 
             # 检查是否所有设备都已完成烧录，如果完成直接恢复按钮，如果未完成，则在所有设备完成后恢复按钮
             if not self.flash_threads:
                 # 全部完成烧录：所有设备完成后恢复按钮
                 self.start_button.setEnabled(True)
-                self.start_button.setText("开始烧录")
-                self.auto_flash_checkbox.setText("自动烧录")
+                self.start_button.setText(
+                    QCoreApplication.translate("BatchFlash", "开始烧录")
+                )
+                self.auto_flash_checkbox.setText(
+                    QCoreApplication.translate("BatchFlash", "自动烧录")
+                )
 
     def validate_inputs(self):
         """验证输入有效性"""
@@ -808,9 +844,13 @@ class Ui_BatchFlashWindow(object):
             if not self.auto_flash_mode:
                 # 正常模式：所有设备完成后恢复按钮
                 self.start_button.setEnabled(True)
-                self.start_button.setText("开始烧录")
+                self.start_button.setText(
+                    QCoreApplication.translate("BatchFlash", "开始烧录")
+                )
                 self.auto_flash_checkbox.setEnabled(True)
-                self.auto_flash_checkbox.setText("自动烧录")
+                self.auto_flash_checkbox.setText(
+                    QCoreApplication.translate("BatchFlash", "自动烧录")
+                )
 
     def add_device_to_ui(self, device_path):
         """添加新设备到界面"""
@@ -853,7 +893,7 @@ class Ui_BatchFlashWindow(object):
             device_list_json = list_devices()
             device_list = json.loads(device_list_json)
             devices = [dev["port_path"] for dev in device_list]
-            logger.info(f"检测到设备: {devices}")
+            logger.debug(f"检测到设备: {devices}")
         except Exception as e:
             logger.error(f"获取设备列表失败: {str(e)}")
             devices = []
@@ -905,14 +945,14 @@ class Ui_BatchFlashWindow(object):
         dialog.log_level_changed.connect(utils.update_log_level)
 
         if dialog.exec():
-            logger.info(f"用户已修改高级设置")
+            logger.info("用户已修改高级设置")
 
     def get_translated_text(self, key):
         """获取翻译文本的辅助方法"""
         translations = {
             "start_flash": QCoreApplication.translate("BatchFlash", "开始烧录"),
             "auto_flash": QCoreApplication.translate("BatchFlash", "自动烧录"),
-            "stop_auto_flash": QCoreApplication.translate("BatchFlash", "停止自动烧录"),
+            "stop_auto_flash": QCoreApplication.translate("BatchFlash", "取消自动烧录"),
         }
         return translations.get(key, key)
 
