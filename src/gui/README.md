@@ -21,11 +21,12 @@ $ pyside6-lrelease english.ts -qm english.qm
 
 - 引入资源文件
 
-# 然后将english.qm配置到resources.qrc中
-
+```bash
+# 然后将english.qm配置到resources.qrc中，当前已经配置好，无需要重新配置
 <qresource prefix="/translations">
-    <file>english.qm</file>
-  </qresource>
+  <file>english.qm</file>
+</qresource>
+
 # 最后重新生成resources_rc.py
 $ pyside6-rcc resources.qrc -o resources_rc.py
 ```

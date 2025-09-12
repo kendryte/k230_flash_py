@@ -97,25 +97,33 @@ class SingleFlash(QMainWindow):
         self.log_output = QTextEdit(self)
         self.log_output.setReadOnly(True)
 
+        self.max_log_lines = 2000  # 最多保留 1000 行
+
         self.ui = Ui_MainWindow(log_output_widget=self.log_output)
         self.ui.setupUi(self)
 
     def init_logging_display(self):
-        # 初始化日志文件监控
+        """初始化日志文件监控（不加载历史日志）"""
         log_file_path = FULL_LOG_FILE_PATH
-        self.log_monitor = LogFileMonitor(log_file_path)
+        self.log_monitor = LogFileMonitor(log_file_path, start_at_end=True)
         self.log_monitor.new_content.connect(self.append_log_content)
 
     @Slot(str)
     def append_log_content(self, content):
-        """将新增日志内容追加到 QTextEdit"""
-        self.log_output.moveCursor(QtGui.QTextCursor.End)  # 移动光标到末尾
+        """将新增日志内容追加到 QTextEdit，限制显示行数"""
+        self.log_output.moveCursor(QtGui.QTextCursor.End)
         self.log_output.insertPlainText(content)
         self.log_output.ensureCursorVisible()
 
-        # 自动滚动到底部
-        scrollbar = self.log_output.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        # 限制最大行数
+        doc = self.log_output.document()
+        if doc.blockCount() > self.max_log_lines:
+            cursor = self.log_output.textCursor()
+            cursor.movePosition(QtGui.QTextCursor.Start)
+            for _ in range(doc.blockCount() - self.max_log_lines):
+                cursor.select(QtGui.QTextCursor.LineUnderCursor)
+                cursor.removeSelectedText()
+                cursor.deleteChar()
 
 
 class Ui_MainWindow(object):
@@ -233,6 +241,7 @@ class Ui_MainWindow(object):
             "device_help_tip": QCoreApplication.translate(
                 "SingleFlash", "💡 找不到烧录设备？查看解决办法"
             ),
+            "refreshed": QCoreApplication.translate("SingleFlash", "已刷新"),
         }
         return translations.get(key, key)
 
@@ -242,7 +251,9 @@ class Ui_MainWindow(object):
         layout = QHBoxLayout(widget)
 
         # 创建 "镜像" 标签
-        self.image_file_label = QLabel("镜像文件：")
+        self.image_file_label = QLabel(
+            QCoreApplication.translate("SingleFlash", "镜像文件：")
+        )
         layout.addWidget(self.image_file_label)
 
         # 创建 QLineEdit 用于显示文件路径
@@ -251,7 +262,9 @@ class Ui_MainWindow(object):
         layout.addWidget(self.file_path_edit)
 
         # 创建文件选择按钮
-        self.file_dialog_button = QPushButton("添加镜像文件")
+        self.file_dialog_button = QPushButton(
+            QCoreApplication.translate("SingleFlash", "添加镜像文件")
+        )
         # 添加一个 add_image_file.png 图片到按钮
         # self.file_dialog_button.setIcon(QIcon(os.path.abspath("assets/add_image_file.png")))
         layout.addWidget(self.file_dialog_button)
@@ -270,9 +283,11 @@ class Ui_MainWindow(object):
         # 打开文件对话框并获取文件路径
         file_path, _ = QFileDialog.getOpenFileName(
             parent=None,  # Use parent=None to make it a top-level dialog
-            caption="选择镜像文件",
+            caption=QCoreApplication.translate("SingleFlash", "选择镜像文件"),
             dir=last_image_path,  # Set initial directory
-            filter="镜像文件 (*.bin *.img *.kdimg *.zip *.gz *.tgz)",
+            filter=QCoreApplication.translate(
+                "SingleFlash", "镜像文件 (*.bin *.img *.kdimg *.zip *.gz *.tgz)"
+            ),
         )
         if file_path:  # 如果用户选择了文件
             self.file_path_edit.setText(file_path)  # 将文件路径显示在 QLineEdit 中
@@ -381,7 +396,9 @@ class Ui_MainWindow(object):
 
     def create_table(self):
         # 创建一个 QGroupBox 作为容器
-        self.image_table_groupbox = QGroupBox("镜像文件内容：")
+        self.image_table_groupbox = QGroupBox(
+            QCoreApplication.translate("SingleFlash", "镜像文件内容：")
+        )
         layout = QVBoxLayout(self.image_table_groupbox)  # 将布局应用到 QGroupBox
 
         # 创建 QTableWidget
@@ -465,7 +482,9 @@ class Ui_MainWindow(object):
 
     def create_target_media_region(self):
         # 创建一个 QGroupBox 作为容器
-        self.target_media_region_group = QGroupBox("目标存储介质：")
+        self.target_media_region_group = QGroupBox(
+            QCoreApplication.translate("SingleFlash", "目标存储介质：")
+        )
 
         layout = QHBoxLayout(self.target_media_region_group)  # 将布局应用到 QGroupBox
 
@@ -497,7 +516,9 @@ class Ui_MainWindow(object):
 
     def create_device_list_region(self):
         # 创建一个 QGroupBox 作为容器
-        self.device_list_region_group = QGroupBox("设备列表：")
+        self.device_list_region_group = QGroupBox(
+            QCoreApplication.translate("SingleFlash", "设备列表：")
+        )
         layout = QVBoxLayout(self.device_list_region_group)
 
         # 添加USB设备列表
@@ -507,7 +528,9 @@ class Ui_MainWindow(object):
             QtWidgets.QSizePolicy.Fixed,  # 垂直固定
         )
         # self.refresh_device_list()  # 加载 USB 设备列表,默认不加载，k230_flash 会自动检测第1个设备，更方便
-        self.list_device_button = QPushButton("刷新设备列表")
+        self.list_device_button = QPushButton(
+            QCoreApplication.translate("SingleFlash", "刷新设备列表")
+        )
         self.list_device_button.setFixedWidth(130)  # 固定宽度
         self.list_device_button.setStyleSheet(CommonWidgetStyles.QPushButton_css())
         self.list_device_button.clicked.connect(self.on_list_device_button_clicked)
@@ -548,7 +571,9 @@ class Ui_MainWindow(object):
 
         # 创建 "开始烧录" 按钮
         self.start_button = QPushButton()  # 初始化时不设置文本，等待update_ui_text调用
-        self.advanced_setting_button = QPushButton("高级设置")
+        self.advanced_setting_button = QPushButton(
+            QCoreApplication.translate("SingleFlash", "高级设置")
+        )
         layout.addWidget(self.start_button)
         layout.addWidget(self.advanced_setting_button)
         qbtn_css = CommonWidgetStyles.QPushButton_css()
@@ -562,7 +587,9 @@ class Ui_MainWindow(object):
 
     def create_log_output_groupbox(self):
         # 创建 QGroupBox
-        self.log_output_groupbox = QGroupBox("日志输出：")
+        self.log_output_groupbox = QGroupBox(
+            QCoreApplication.translate("SingleFlash", "日志输出：")
+        )
 
         # 创建 QTextEdit 用于日志输出
         # self.log_output = QTextEdit()
@@ -834,7 +861,9 @@ class Ui_MainWindow(object):
     @Slot(str)
     def display_flash_error(self, error_message):
         """显示烧录错误信息，并更新进度条状态"""
-        self.progress_bar.setFormat("烧录失败：100%")  # Set format to error message
+        self.progress_bar.setFormat(
+            QCoreApplication.translate("SingleFlash", "烧录失败：100%")
+        )  # Set format to error message
         self.progress_bar.setValue(
             100
         )  # Reset value or set to a specific error value if desired
@@ -955,8 +984,13 @@ class Ui_MainWindow(object):
 
     def on_list_device_button_clicked(self):
         self.refresh_device_list()
-        self.list_device_button.setText("已刷新")
-        QTimer.singleShot(1000, lambda: self.list_device_button.setText("刷新设备列表"))
+        self.list_device_button.setText(self.get_translated_text("refreshed"))
+        QTimer.singleShot(
+            1000,
+            lambda: self.list_device_button.setText(
+                QCoreApplication.translate("SingleFlash", "刷新设备列表")
+            ),
+        )
 
 
 # 线程类，防止 GUI 卡死

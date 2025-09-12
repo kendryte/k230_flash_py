@@ -2,6 +2,10 @@
   <qresource prefix="/icons">
     <file>assets/flash_animation.gif</file>
     <file>assets/k230_flash_gui_logo.png</file>
+    <file>assets/usb_type_c_ready.png</file>
+    <file>assets/usb_type_c_disabled.png</file>
+    <file>assets/usb_type_c_success.png</file>
+    <file>assets/usb_type_c_failed.png</file>
   </qresource>
   <qresource prefix="/translations">
     <file>english.qm</file>

@@ -216,11 +216,13 @@ if __name__ == "__main__":
 
 除了命令行工具和Python库，本项目还提供了功能完整的图形界面工具 **K230 Flash GUI**，让用户能够通过直观的界面进行固件烧录操作。
 
+<img src="https://raw.githubusercontent.com/kendryte/k230_flash_py/main/src/gui/images/single_flash_mode.png" width="600">
+
 ### 📥 下载安装
 
 您可以从 [GitHub Releases](https://github.com/kendryte/k230_flash_py/releases) 页面下载最新版本的预编译可执行文件。下载后直接运行即可，无需安装 Python 环境。
 
-GUI 工具的详细使用说明请参考 [K230 Flash GUI 使用手册](src/gui/k230_flash_gui.md)。
+GUI 工具的详细使用说明请参考 [K230 Flash GUI 使用手册](../../src/gui/k230_flash_gui_zh.md)。
 
 ---
 
