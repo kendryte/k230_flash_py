@@ -38,3 +38,13 @@ k230_flash = ["loaders/*.bin"]       # Include your loaders/*.bin files
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"
 local_scheme = "node-and-date"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Hardware tests need a real K230 wired to a board-control rig, so they are
+# deselected by default: a bare `pytest` runs only what works on any machine.
+# Run them with `pytest --hardware -m hardware`.
+addopts = "-m 'not hardware'"
+markers = [
+    "hardware: needs a real K230 board; deselected unless --hardware is passed",
+]

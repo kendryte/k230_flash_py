@@ -796,8 +796,11 @@ class Ui_MainWindow(object):
         media_map = {
             "eMMC": "EMMC",
             "SD Card": "SDCARD",
-            "Nand Flash": "SPINAND",
-            "NOR Flash": "SPINOR",
+            # Must match k230_flash.constants.MEDIA_TYPES exactly. These read
+            # "SPINAND"/"SPINOR" before, which no burner ever accepted, so the
+            # NAND and NOR radio buttons could not flash at all.
+            "Nand Flash": "SPI_NAND",
+            "NOR Flash": "SPI_NOR",
             "OTP": "OTP",
         }
         return media_map.get(self.get_selected_media(), None)  # 添加默认值
@@ -1019,9 +1022,9 @@ class FlashThread(QThread):
         if self.params["device_path"]:
             args_list.extend(["--device-path", self.params["device_path"]])
         if self.params["custom_loader"]:
-            args_list.extend(
-                ["--custom-loader", "--loader-file", self.params["loader_file"]]
-            )
+            # No --custom-loader option exists; passing it made argparse reject
+            # the entire command line, so this path never flashed anything.
+            args_list.extend(["--loader-file", str(self.params["loader_file"])])
         if self.params["loader_address"]:
             args_list.extend(["--loader-address", hex(self.params["loader_address"])])
         if self.params["log_level"]:
@@ -1054,7 +1057,9 @@ class FlashThread(QThread):
             )
             logger.info("烧录成功！")
         except SystemExit as e:
-            error_message = f"烧录失败: cmd_main 试图退出 GUI，错误代码: {e.code}"
+            # k230_flash.main raises SystemExit for every failure, including
+            # rejected arguments; the concise reason is already in the log.
+            error_message = f"烧录失败（错误代码 {e.code}），详情请查看日志"
             logger.error(error_message)
             self.error_signal.emit(error_message)  # Emit error signal
         except Exception as e:

@@ -36,11 +36,17 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            VERSION="${GITHUB_REF_NAME}-$(git rev-parse --short HEAD)"
-          else
-            VERSION="${GITHUB_REF_NAME}-$(git rev-parse --short HEAD)"
-          fi
+          # Slashes have to go. VERSION ends up in an upload-artifact name,
+          # which rejects "/" outright ("The artifact name is not valid"), and
+          # in the AppImage output filename, where it would silently become a
+          # directory component. Every branch following this project's own
+          # convention has one -- fix/..., feature/... -- so a manual run on
+          # any of them failed at the very last step, after the whole build had
+          # already succeeded.
+          #
+          # Tags and branches were always treated identically here: the two
+          # arms of the old if/else were the same line.
+          VERSION="${GITHUB_REF_NAME//\//-}-$(git rev-parse --short HEAD)"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "VERSION=$VERSION"
 
@@ -73,17 +79,37 @@ jobs:
 
   gui-release:
     strategy:
+      # Without this the first platform to fail cancels the other two, and
+      # their logs read "The operation was canceled" -- which is how a
+      # Linux-only breakage came to look like all three platforms being broken.
+      fail-fast: false
       matrix:
+        # `label` selects which build step runs and must stay one of
+        # ubuntu/windows/macos; `arch` exists only so the two macOS jobs can be
+        # told apart in artifact names.
+        #
+        # macOS is built twice on purpose. macos-14 and later are Apple Silicon
+        # only, macos-13 is the last free Intel image, and nothing here builds
+        # universal2 binaries -- PyInstaller targets the host architecture. So
+        # simply "upgrading" macos-13 to macos-14 would have dropped Intel Macs
+        # without the artifact name changing to say so.
         include:
         - os: ubuntu-22.04
           label: ubuntu
+          arch: x86_64
           runner: ubuntu-22.04
         - os: windows-2022
           label: windows
+          arch: x86_64
           runner: windows-2022
         - os: macos-13
           label: macos
+          arch: x86_64
           runner: macos-13
+        - os: macos-14
+          label: macos
+          arch: arm64
+          runner: macos-14
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
@@ -115,11 +141,17 @@ jobs:
         id: version
         run: |
           git config --global --add safe.directory $GITHUB_WORKSPACE
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            VERSION="${GITHUB_REF_NAME}-$(git rev-parse --short HEAD)"
-          else
-            VERSION="${GITHUB_REF_NAME}-$(git rev-parse --short HEAD)"
-          fi
+          # Slashes have to go. VERSION ends up in an upload-artifact name,
+          # which rejects "/" outright ("The artifact name is not valid"), and
+          # in the AppImage output filename, where it would silently become a
+          # directory component. Every branch following this project's own
+          # convention has one -- fix/..., feature/... -- so a manual run on
+          # any of them failed at the very last step, after the whole build had
+          # already succeeded.
+          #
+          # Tags and branches were always treated identically here: the two
+          # arms of the old if/else were the same line.
+          VERSION="${GITHUB_REF_NAME//\//-}-$(git rev-parse --short HEAD)"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "VERSION=$VERSION"
 
@@ -131,10 +163,15 @@ jobs:
           PYTHONUTF8: 1
         run: |
           chcp 65001  # 设置控制台为 UTF-8
-          pip install --upgrade pip
-          pip install pyinstaller
-          pip install -r requirements.txt
-          pip install -e .
+          # python -m pip, not bare pip: on Windows `pip install --upgrade pip`
+          # cannot replace the executable it is running from and logs
+          # "ERROR: To modify pip, please run the following command". pwsh does
+          # not stop on that, so the upgrade silently never happened while the
+          # log carried a red herring for anyone debugging this job.
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
           cd src/gui
           # Create version.txt file
           echo "$env:VERSION" | Out-File -FilePath "version.txt" -Encoding utf8 -NoNewline
@@ -147,10 +184,10 @@ jobs:
         env:
           VERSION: ${{ env.VERSION }}
         run: |
-          pip install --upgrade pip
-          pip install pyinstaller
-          pip install -r requirements.txt
-          pip install -e .
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
           cd src/gui
           # Create version.txt file
           echo "$VERSION" > version.txt
@@ -173,7 +210,7 @@ jobs:
             --user root \
             -v "${{ github.workspace }}:/workspace" \
             -w /workspace \
-            ubuntu:20.04 \
+            ubuntu:22.04 \
             bash -c '
               export DEBIAN_FRONTEND=noninteractive
               export TZ=Etc/UTC
@@ -192,32 +229,77 @@ jobs:
                 libusb-1.0-0 \
                 libusb-1.0-0-dev \
                 libusb-dev \
-                libgdk-pixbuf2.0-0 libgdk-pixbuf2.0-bin libgdk-pixbuf2.0-dev
+                libgdk-pixbuf2.0-0 libgdk-pixbuf2.0-bin libgdk-pixbuf2.0-dev \
+                libxkbcommon0 libxkbcommon-x11-0 libxcb1 libxcb-cursor0 \
+                libwayland-client0 libwayland-cursor0 libwayland-egl1 libdrm2
 
-              # Python 3.11
-              add-apt-repository ppa:deadsnakes/ppa -y
-              apt-get update
-              apt-get install -y python3.11 python3.11-venv python3.11-dev python3.11-distutils
-              curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
+              # PyInstaller only bundles a library it can find on the *build*
+              # machine, so what ends up in the artefact depends on what is
+              # installed here. libxkbcommon0 was missing, so the released
+              # bundle referenced it without shipping it and died on a clean
+              # system with "ImportError: libxkbcommon.so.0". A local build was
+              # fine only because that machine happened to have it already.
+              #
+              # NOTE: this whole block is inside bash -c SINGLE QUOTES, so an
+              # apostrophe anywhere in it -- including in a comment -- closes
+              # the string early and the remainder runs on the host runner
+              # instead of in the container. That is exactly how this comment
+              # broke the build once already.
 
-              # 将 python3 指向 3.11（保留 3.8 作为备选）
-              update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1
-              update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 2
-              update-alternatives --set python3 /usr/bin/python3.11
+              # Python: jammy ships 3.10, which is all this needs
+              # (requires-python is >=3.9).
+              #
+              # This used to be ubuntu:20.04 plus python3.11 from the deadsnakes
+              # PPA, and it broke the moment deadsnakes stopped publishing for
+              # focal after 20.04 went EOL. The PPA still resolved -- apt logged
+              # "Hit ... deadsnakes ... focal InRelease" -- it simply no longer
+              # carried python3.11, so the build failed with "Unable to locate
+              # package python3.11" and then "pyinstaller: command not found".
+              # Nothing in this repo changed; the base image rotted underneath.
+              #
+              # Staying on 20.04 was not an option: its own Python is 3.8 and
+              # PySide6 6.8 requires >=3.9. Using the distro Python rather than
+              # a PPA also removes a third party that can drop support again.
+              #
+              # Cost: the AppImage glibc floor moves 2.31 -> 2.35, so it now
+              # needs Ubuntu 22.04+ / Debian 12+ rather than 20.04+.
+              apt-get install -y python3 python3-venv python3-dev python3-pip
+              python3 --version
 
               # pip & 构建工具
               python3 -m pip install --upgrade pip setuptools wheel
 
-              # PySide6 + PyInstaller
-              python3 -m pip install PySide6 pyinstaller
+              # PyInstaller only -- PySide6 comes from requirements.txt below, which
+              # pins it. Installing it unpinned here meant the GUI was built
+              # against whatever PySide6 was current that day rather than the
+              # version the project tests against.
+              python3 -m pip install pyinstaller
 
-              pip install --upgrade pip
-              pip install pyinstaller
-              pip install -r requirements.txt
-              pip install -e .
+              # python3 -m pip, not bare pip: with the distro Python the bare
+              # entry point can resolve to a different interpreter.
+              python3 -m pip install -r requirements.txt
+              python3 -m pip install -e .
+
+              # Fail loudly here rather than 60 lines later at "dist does not
+              # exist", which is how the previous breakage presented.
+              python3 -m PyInstaller --version
 
               wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /usr/local/bin/appimagetool
               chmod +x /usr/local/bin/appimagetool
+
+              # The runtime that appimagetool embeds by default dlopen()s
+              # libfuse.so.2, which Ubuntu has not shipped by default since
+              # 22.04 and renamed to libfuse2t64 in 24.04. The result was an
+              # AppImage that refused to start on any current distro with
+              #     dlopen(): error loading libfuse.so.2
+              #     AppImages require FUSE to run.
+              # even though nothing was wrong with the application. The
+              # type2-runtime build is static-pie linked with fuse3 built in
+              # (verified: `not a dynamic executable`, zero references to
+              # libfuse.so.2), so it needs nothing installed on the host.
+              wget -q https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64 \
+                   -O /tmp/appimage-runtime
+              chmod +x /tmp/appimage-runtime
 
               # 验证和确保upload目录存在
               echo "检查upload目录状态:"
@@ -243,7 +325,7 @@ jobs:
                 echo "Created version.txt with default version: dev"
               fi
               
-              pyinstaller --clean -y k230_flash_gui.spec
+              python3 -m PyInstaller --clean -y k230_flash_gui.spec
 
               # 验证PyInstaller构建输出
               if [ ! -d "dist/k230_flash_gui" ]; then
@@ -298,7 +380,7 @@ jobs:
               
               # 打包 AppImage
               echo "开始打包AppImage..."
-              if ARCH=x86_64 appimagetool --no-appstream $APPDIR "$OUTPUT_PATH"; then
+              if ARCH=x86_64 appimagetool --no-appstream --runtime-file /tmp/appimage-runtime $APPDIR "$OUTPUT_PATH"; then
                 echo "AppImage创建成功!"
                 ls -la "$OUTPUT_PATH"
               else
@@ -311,7 +393,71 @@ jobs:
                 exit 1
               fi
             '
-      
+
+      # Actually start the thing on distros we do not build on. The AppImage
+      # shipped broken on every current Ubuntu for a while -- it needed
+      # libfuse2, which 22.04 stopped installing by default and 24.04 renamed --
+      # and nothing in CI noticed, because building an artefact says nothing
+      # about whether it runs. If the AppImage ever fails here and it is not
+      # obvious whether the runtime or the bundle is at fault,
+      # `./app.AppImage --appimage-extract` separates the two.
+      - name: Smoke-test the Linux bundles on other distros
+        if: matrix.label == 'ubuntu'
+        run: |
+          set -euo pipefail
+          for image in ubuntu:22.04 ubuntu:24.04 debian:12; do
+            echo "::group::$image"
+            # --device /dev/fuse models a normal desktop; the point of the
+            # static runtime is that no libfuse2 *package* is needed, not that
+            # FUSE itself is gone. Deliberately installing nothing beyond the
+            # bare X-less Qt dependencies -- if the bundle needs more than this,
+            # that is what we want to find out here rather than from a user.
+            docker run --rm --privileged --device /dev/fuse \
+              -v "${{ github.workspace }}/upload:/upload:ro" \
+              -e QT_QPA_PLATFORM=offscreen \
+              "$image" bash -euo pipefail -c '
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update -qq >/dev/null
+                # Model a desktop, not a bare container. These are libraries any
+                # graphical install already has, and several of them (libGL,
+                # libEGL, libdrm) must come from the host anyway because they
+                # are coupled to the graphics driver and must never be bundled.
+                # fuse3 is here because the static AppImage runtime still needs
+                # the fusermount3 *binary*; what it no longer needs is libfuse2,
+                # and that absence is asserted below -- it is the actual
+                # regression being guarded.
+                apt-get install -y -qq --no-install-recommends \
+                  fuse3 libglib2.0-0 libgl1 libegl1 libdrm2 libdbus-1-3 fontconfig \
+                  libxkbcommon0 libxcb1 libwayland-client0 libwayland-cursor0 libwayland-egl1 \
+                  >/dev/null
+                if dpkg -l | grep -qE "^ii +libfuse2"; then
+                  echo "FAIL: libfuse2 is installed, so this proves nothing"; exit 1
+                fi
+                echo "libfuse2 absent as intended; fusermount3=$(command -v fusermount3 || echo MISSING)"
+
+                work=$(mktemp -d); cd "$work"
+                cp /upload/*.AppImage ./app.AppImage
+                chmod +x app.AppImage
+
+                check() {  # $1 = label, $2... = command
+                  local label=$1; shift
+                  local rc=0
+                  timeout 25 "$@" > out.log 2>&1 || rc=$?
+                  # A GUI that is still alive when timeout fires (124) is the
+                  # success case; anything else means it exited on its own.
+                  if ! grep -q "主窗口已显示" out.log; then
+                    echo "FAIL [$label]: never reached the main window (rc=$rc)"
+                    sed -n 1,40p out.log
+                    return 1
+                  fi
+                  echo "OK   [$label] (rc=$rc)"
+                }
+
+                check AppImage ./app.AppImage
+              '
+            echo "::endgroup::"
+          done
+
       # 上传 release
       - name: Upload GUI Release Asset
         if: startsWith(github.ref, 'refs/tags/')
@@ -323,5 +469,5 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
         with:
-          name: k230_flash_gui-${{ matrix.label }}-${{ env.VERSION }}
+          name: k230_flash_gui-${{ matrix.label }}-${{ matrix.arch }}-${{ env.VERSION }}
           path: upload/*

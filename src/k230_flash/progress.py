@@ -8,4 +8,3 @@ def progress_callback(current, total):
     sys.stdout.flush()
     if current >= total:
         print()
-

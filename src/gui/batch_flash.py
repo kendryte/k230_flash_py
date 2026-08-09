@@ -115,9 +115,9 @@ class DeviceFlashThread(QThread):
         args_list = []
         args_list.extend(["--device-path", self.device_path])
         if self.params["custom_loader"]:
-            args_list.extend(
-                ["--custom-loader", "--loader-file", self.params["loader_file"]]
-            )
+            # No --custom-loader option exists; passing it made argparse reject
+            # the entire command line, so this path never flashed anything.
+            args_list.extend(["--loader-file", str(self.params["loader_file"])])
         if self.params["loader_address"]:
             args_list.extend(["--loader-address", hex(self.params["loader_address"])])
         if self.params["log_level"]:
@@ -151,8 +151,9 @@ class DeviceFlashThread(QThread):
             logger.info(f"设备 {self.device_path} 烧录成功！")
             self.finished_signal.emit(self.device_path, True, "")
         except SystemExit as e:
-            # 捕获SystemExit异常，避免程序退出
-            error_message = f"设备 {self.device_path} 烧录失败: cmd_main 试图退出 GUI，错误代码: {e.code}"
+            # k230_flash.main raises SystemExit for every failure, including
+            # rejected arguments; catching it here keeps the GUI alive.
+            error_message = f"设备 {self.device_path} 烧录失败（错误代码 {e.code}），详情请查看日志"
             logger.error(error_message)
             self.finished_signal.emit(self.device_path, False, error_message)
         except Exception as e:
@@ -764,8 +765,11 @@ class Ui_BatchFlashWindow(object):
         media_map = {
             "eMMC": "EMMC",
             "SD Card": "SDCARD",
-            "Nand Flash": "SPINAND",
-            "NOR Flash": "SPINOR",
+            # Must match k230_flash.constants.MEDIA_TYPES exactly. These read
+            # "SPINAND"/"SPINOR" before, which no burner ever accepted, so the
+            # NAND and NOR radio buttons could not flash at all.
+            "Nand Flash": "SPI_NAND",
+            "NOR Flash": "SPI_NOR",
             "OTP": "OTP",
         }
         selected_media = self.get_selected_media()

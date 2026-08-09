@@ -1,9 +1,20 @@
+# Keep the tool versions here in step with .github/workflows/tests.yml: black's
+# formatting changes between releases, so an unpinned drift makes CI fail on
+# code the hook just accepted.
+#
+# `exclude` matches the CI job's scope. That job checks only src/k230_flash and
+# tests, on purpose -- src/gui/ sources were never black-formatted, and
+# reformatting them wholesale would bury real changes under hundreds of lines
+# of mechanical diff. Without this the hook and CI disagreed: touching one line
+# of a GUI file made the hook rewrite the whole module.
+exclude: '^src/gui/'
+
 repos:
   - repo: https://github.com/psf/black
-    rev: 24.4.0 
+    rev: 24.4.0
     hooks:
       - id: black
-        language_version: python3  
+        language_version: python3
         args: [--line-length=120]
 
   - repo: https://github.com/PyCQA/isort

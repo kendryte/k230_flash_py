@@ -6,6 +6,7 @@ macOS平台GUI打包脚本
 """
 
 import os
+import platform
 import plistlib
 import shutil
 import subprocess
@@ -259,7 +260,13 @@ def create_dmg():
     output_dir = Path("../../upload")
     output_dir.mkdir(exist_ok=True)
     
-    dmg_name = f"k230_flash_gui-macos-{version}.dmg"
+    # The architecture has to be in the name. PyInstaller builds for the host
+    # only, and CI now builds on both an Intel runner and an Apple Silicon one;
+    # without this both jobs would write k230_flash_gui-macos-<version>.dmg and
+    # silently overwrite each other in the release, leaving users no way to tell
+    # which one they downloaded.
+    arch = platform.machine()  # x86_64 on Intel, arm64 on Apple Silicon
+    dmg_name = f"k230_flash_gui-macos-{arch}-{version}.dmg"
     dmg_path = output_dir / dmg_name
     
     # Delete existing dmg file

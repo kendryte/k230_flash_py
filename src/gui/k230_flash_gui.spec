@@ -87,6 +87,13 @@ a = Analysis(
     hookspath=[],
     runtime_hooks=[],
     excludes=[
+        # 竞争的 Qt 绑定。PyInstaller 一旦发现环境里有第二套 Qt 绑定就会直接
+        # 中止（"attempt to collect multiple Qt bindings packages"），而开发机
+        # 的 conda base 里同时装着 PyQt6 是很常见的。这个应用只用 PySide6，
+        # 所以把其余几套排掉，构建就不再依赖“环境里恰好只装了一套”。
+        "PyQt5",
+        "PyQt6",
+        "PySide2",
         # 不使用WebEngine，排除相关模块
         "PySide6.QtWebEngine",
         "PySide6.QtWebEngineCore",

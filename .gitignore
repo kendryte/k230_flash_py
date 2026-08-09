@@ -210,3 +210,20 @@ src/gui/dist
 src/gui/build
 *.AppImage
 upload/*
+
+# Claude Code
+CLAUDE.md
+
+# Local-only design/investigation notes. docs/ itself is published documentation;
+# anything under docs/internal/ is working material that stays on this machine.
+docs/internal/
+# pytest JUnit output (CI artifacts)
+junit-*.xml
+
+# Isolated environment created by ./build.sh --venv for GUI builds.
+.build-venv/
+
+# Generated before each GUI build (build.sh / the release workflow both write
+# it, and the spec bundles it if present). It was committed once by accident
+# and shipped a meaningless version string; it must never be tracked.
+src/gui/version.txt

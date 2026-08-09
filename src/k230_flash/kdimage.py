@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+"""Parsing and validation of the ``.kdimg`` container format.
+
+The format itself (header, partition table, per-partition payloads and their
+checksums) is documented in ``kdimage.md``; this module only implements it.
+
+Partition payloads are handed to callers as *streams* rather than as bytes.
+A full-card rootfs partition is easily multiple GB, and materialising it --
+plus its 0xFF padding -- would put twice its size on the heap for no reason.
+"""
+
 import hashlib
 import struct
 import zlib
@@ -21,6 +31,24 @@ PART_FORMAT_V1 = "<8I32s32s"
 # V2 partition format (part_flag is uint64_t, with padding)
 PART_FORMAT_V2 = "<5I4xQII32s32s"
 
+# A sane upper bound on the partition count. The field is a uint32, so a
+# corrupt header can ask us to read 4 billion * 256 bytes; without this the
+# read() below tries to allocate a terabyte before the CRC ever gets a chance
+# to reject the image.
+MAX_PART_TBL_NUM = 512
+
+# How much to move per read when streaming a payload off disk.
+STREAM_CHUNK_SIZE = 1024 * 1024
+
+
+class KdimageError(ValueError):
+    """Raised when a .kdimg file cannot be parsed or fails verification.
+
+    Subclasses ValueError because that is what the write path already raised
+    for a rejected image, so existing `except ValueError` callers keep working
+    while gaining an explicit reason instead of a bare None.
+    """
+
 
 # Define the image item class to save the metadata of each part
 class KburnImageItem:
@@ -41,6 +69,16 @@ class KburnImageItem:
         self.partContentOffset = partContentOffset  # Start offset of partition data in kdimage
         self.partContentSize = partContentSize  # Actual data size of the partition
         self.expectedSha256 = expectedSha256  # Expected SHA-256 value represented by a hex string
+
+    @property
+    def writeSize(self):
+        """Number of bytes actually handed to the device for this partition.
+
+        Normally partSize, with the payload padded out to it using 0xFF. A
+        payload larger than the declared size is written in full rather than
+        silently truncated.
+        """
+        return max(self.partContentSize, self.partSize)
 
     def __lt__(self, other):
         return self.partOffset < other.partOffset
@@ -67,25 +105,67 @@ class KburnImageItemList:
         self.data.clear()
 
 
-# KburnKdImage class: responsible for parsing the kdimage file and saving the metadata of each part
-# Singleton mode is used here to ensure that there is only one instance globally (for easy management and caching of parsing results)
+class _PaddedPartitionStream:
+    """Read-only file-like view of one partition: payload then 0xFF padding.
+
+    Exposes just enough of the file protocol for ``write_image_stream`` --
+    ``read(n)`` plus the context-manager methods -- so a partition can be fed
+    to the device a chunk at a time instead of being assembled in memory.
+    """
+
+    def __init__(self, image_path, content_offset, content_size, total_size):
+        self._file = image_path.open("rb")
+        self._file.seek(content_offset)
+        self._content_size = content_size
+        self._total_size = total_size
+        self._pos = 0
+
+    def read(self, size=-1):
+        remaining = self._total_size - self._pos
+        if size is None or size < 0:
+            size = remaining
+        size = min(size, remaining)
+        if size <= 0:
+            return b""
+
+        out = b""
+        # Payload portion.
+        if self._pos < self._content_size:
+            want = min(size, self._content_size - self._pos)
+            out = self._file.read(want)
+            if len(out) != want:
+                raise KdimageError(f"分区数据提前结束: 期望 {want} 字节, 实际 {len(out)}")
+            self._pos += len(out)
+            size -= len(out)
+
+        # Padding portion, generated rather than stored.
+        if size > 0:
+            out += b"\xff" * size
+            self._pos += size
+
+        return out
+
+    def close(self):
+        self._file.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
+
+
+# KburnKdImage: parses a .kdimg file and holds the metadata of each part.
+#
+# This deliberately is NOT a singleton. It used to be, keyed on nothing at all,
+# so `instance(a)` followed by `instance(b)` handed back a's parse of a's file --
+# meaning the GUI's partition list and, worse, a batch flash of several images
+# in one process silently operated on whichever image happened to be opened
+# first. Parsing is cheap; construct one per file.
 class KburnKdImage:
-    _instance = None
-
-    @classmethod
-    def instance(cls, image_path=None):
-        if cls._instance is None:
-            if image_path is None:
-                raise ValueError("image_path must be provided when creating an instance for the first time")
-            cls._instance = cls(Path(image_path))  # Pass in the Path object
-        return cls._instance
-
-    @classmethod
-    def deleteInstance(cls):
-        cls._instance = None
-
     def __init__(self, image_path):
-        self._image_path = image_path.resolve()  # Normalize the path
+        self._image_path = Path(image_path).resolve()  # Normalize the path
         self._image_file = None
         self._header = None
         self._curr_parts = []  # Save the parsed part data (list of dictionaries)
@@ -111,7 +191,7 @@ class KburnKdImage:
         self._image_file.seek(0)
         header_data = self._image_file.read(HEADER_SIZE)
         if len(header_data) < HEADER_SIZE:
-            logger.error("Failed to read the full header")
+            logger.error(f"Failed to read the full header: got {len(header_data)} of {HEADER_SIZE} bytes")
             return False
 
         header_unpacked = struct.unpack(HEADER_FORMAT, header_data[: struct.calcsize(HEADER_FORMAT)])
@@ -130,9 +210,7 @@ class KburnKdImage:
 
         if hdr["img_hdr_magic"] != KDIMG_HADER_MAGIC:
             logger.error(
-                "Invalid image header magic! Expected 0x%08X, got 0x%08X",
-                KDIMG_HADER_MAGIC,
-                hdr["img_hdr_magic"],
+                f"Invalid image header magic! Expected 0x{KDIMG_HADER_MAGIC:08X}, " f"got 0x{hdr['img_hdr_magic']:08X}"
             )
             return False
 
@@ -141,11 +219,7 @@ class KburnKdImage:
         header_bytes[4:8] = b"\x00\x00\x00\x00"
         calc_crc32 = zlib.crc32(header_bytes) & 0xFFFFFFFF
         if calc_crc32 != hdr["img_hdr_crc32"]:
-            logger.error(
-                "Invalid header CRC32! Expected 0x%08X, got 0x%08X",
-                hdr["img_hdr_crc32"],
-                calc_crc32,
-            )
+            logger.error(f"Invalid header CRC32! Expected 0x{hdr['img_hdr_crc32']:08X}, got 0x{calc_crc32:08X}")
             return False
 
         # Select the partition table format according to the header version
@@ -159,18 +233,21 @@ class KburnKdImage:
 
         # Read part table
         num_parts = hdr["part_tbl_num"]
+        if num_parts > MAX_PART_TBL_NUM:
+            logger.error(f"Implausible partition count {num_parts} (max {MAX_PART_TBL_NUM}); refusing to read table")
+            return False
         part_table_size = num_parts * PART_STRUCT_SIZE
         part_table_data = self._image_file.read(part_table_size)
         if len(part_table_data) < part_table_size:
-            logger.error("Failed to read the complete part table")
+            logger.error(
+                f"Failed to read the complete part table: got {len(part_table_data)} of {part_table_size} bytes"
+            )
             return False
 
         calc_part_tbl_crc32 = zlib.crc32(part_table_data) & 0xFFFFFFFF
         if calc_part_tbl_crc32 != hdr["part_tbl_crc32"]:
             logger.error(
-                "Invalid part table CRC32! Expected 0x%08X, got 0x%08X",
-                hdr["part_tbl_crc32"],
-                calc_part_tbl_crc32,
+                f"Invalid part table CRC32! Expected 0x{hdr['part_tbl_crc32']:08X}, got 0x{calc_part_tbl_crc32:08X}"
             )
             return False
 
@@ -179,7 +256,7 @@ class KburnKdImage:
             offset = i * PART_STRUCT_SIZE
             part_data = part_table_data[offset : offset + PART_STRUCT_SIZE]
             if len(part_data) < part_format_size:
-                logger.error("Insufficient part data, part %d", i)
+                logger.error(f"Insufficient part data, part {i}")
                 return False
 
             unpacked = struct.unpack(part_format, part_data[:part_format_size])
@@ -199,7 +276,7 @@ class KburnKdImage:
             }
 
             if part["part_magic"] != KDIMG_PART_MAGIC:
-                logger.error("Invalid magic for part %d", i)
+                logger.error(f"Invalid magic for part {i}: 0x{part['part_magic']:08X}")
                 return False
             self._curr_parts.append(part)
         return True
@@ -248,53 +325,70 @@ class KburnKdImage:
                 max_off = curr
         return max_off
 
+    def verify_part_sha256(self, item):
+        """Check a partition's payload against its recorded digest.
+
+        Done as a separate streaming pass *before* any bytes go to the device:
+        a partition that fails verification must never be partially written,
+        and hashing while writing would do exactly that. The extra read is off
+        the page cache and costs nothing next to the USB transfer.
+        """
+        digest = hashlib.sha256()
+        read = 0
+        with self._image_path.open("rb") as f:
+            f.seek(item.partContentOffset)
+            while read < item.partContentSize:
+                chunk = f.read(min(STREAM_CHUNK_SIZE, item.partContentSize - read))
+                if not chunk:
+                    break
+                digest.update(chunk)
+                read += len(chunk)
+
+        if read != item.partContentSize:
+            raise KdimageError(f"分区 {item.partName} 数据不完整: 期望 {item.partContentSize} 字节, 实际 {read}")
+
+        calculated = digest.hexdigest()
+        logger.debug(f"Part: {item.partName}")
+        logger.debug(f"Calculated SHA256: {calculated}")
+        logger.debug(f"Expected SHA256:   {item.expectedSha256}")
+
+        if calculated != item.expectedSha256:
+            raise KdimageError(
+                f"分区 {item.partName} SHA256 校验失败。" f"计算值: {calculated}, 期望值: {item.expectedSha256}"
+            )
+
+    def open_part_stream(self, item):
+        """Return a file-like yielding the partition payload padded to size.
+
+        The caller is responsible for closing it; it is also a context manager.
+        Verify with verify_part_sha256() first -- this does no checking.
+        """
+        return _PaddedPartitionStream(
+            self._image_path,
+            item.partContentOffset,
+            item.partContentSize,
+            item.writeSize,
+        )
+
     def read_part_data(self, item):
+        """Verify and return a partition's full padded contents as bytes.
+
+        Kept for callers that genuinely want the bytes; the write path streams
+        instead (see open_part_stream). Raises KdimageError rather than
+        returning None, so the reason for a failure is not thrown away.
         """
-        Directly read partition data from the original kdimage file according to the item information.
-        First verify the original data, and then supplement with 0xFF as needed.
-        """
-        try:
-            with self._image_path.open("rb") as f:
-                # 1. Read original data
-                f.seek(item.partContentOffset)
-                data = f.read(item.partContentSize)
-                if len(data) != item.partContentSize:
-                    raise ValueError(f"Insufficient data read: Expected {item.partContentSize}, got {len(data)}")
-
-                # 2. Perform SHA256 verification on the original data
-                sha256_calculated = hashlib.sha256(data).hexdigest()
-
-                # --- Added debug log ---
-                logger.debug(f"Part: {item.partName}")
-                logger.debug(f"Calculated SHA256: {sha256_calculated}")
-                logger.debug(f"Expected SHA256:   {item.expectedSha256}")
-                # --- End of debug log ---
-
-                if sha256_calculated != item.expectedSha256:
-                    raise ValueError(
-                        f"SHA256 verification failed for part {item.partName}. "
-                        f"Calculated value: {sha256_calculated}, Expected value: {item.expectedSha256}"
-                    )
-
-                # 3. After successful verification, perform data padding
-                if item.partContentSize < item.partSize:
-                    padding_size = item.partSize - item.partContentSize
-                    data += b"\xff" * padding_size
-
-                # 4. Return the final data
-                return data
-        except Exception as e:
-            logger.error("Failed to read partition %s data: %s", item.partName, e)
-            return None
+        self.verify_part_sha256(item)
+        with self.open_part_stream(item) as stream:
+            return stream.read()
 
 
 # External interface
 def get_kdimage_items(image_path: Path):
-    return KburnKdImage.instance(image_path).items()
+    return KburnKdImage(image_path).items()
 
 
 def get_kdimage_max_offset(image_path: Path):
-    kdimg = KburnKdImage.instance(image_path)
+    kdimg = KburnKdImage(image_path)
     if not kdimg.open():
         return 0
     if not kdimg.parse_parts():
@@ -303,42 +397,3 @@ def get_kdimage_max_offset(image_path: Path):
     max_off = kdimg.max_offset()
     kdimg.close()
     return max_off
-
-
-# ----------------------------
-# Test code
-# ----------------------------
-if __name__ == "__main__":
-    import argparse
-    import sys
-
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
-
-    test_file = Path(
-        "C:/data/wechat/WeChat Files/huangzhenming847866/FileStorage/File/2025-07/k230_xwy01_rtsmart_local_nncase_v2.9.0(4).kdimg"
-    )
-
-    logger.info(f"Start parsing kdimage file: {test_file}")
-    items = get_kdimage_items(test_file)
-    if items is None or items.size() == 0:
-        logger.error("No part information was parsed.")
-    else:
-        logger.info("Parsed %d parts:", items.size())
-        for item in items.data:
-            logger.info(
-                f"Part Name: {item.partName}, Offset: 0x{item.partOffset:08X}, Size: 0x{item.partSize:X}, ContentOffset: 0x{item.partContentOffset:08X}, ContentSize: 0x{item.partContentSize:X}"
-            )
-        max_offset = get_kdimage_max_offset(test_file)
-        logger.info(
-            f"kdimage maximum offset: 0x{max_offset}08X",
-        )
-
-        # Test reading the data of the first part
-        kdimg = KburnKdImage.instance(test_file)
-        first_item = items.data[2]
-        data = kdimg.read_part_data(first_item)
-        if data is not None:
-            logger.info(f"Successfully read part {first_item.partName} data, data length: {len(data)} bytes")
-        else:
-            logger.error("Failed to read part data")

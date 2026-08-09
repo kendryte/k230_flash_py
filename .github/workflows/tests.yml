@@ -1,0 +1,185 @@
+name: Tests
+
+# Every push to every branch is tested, so a problem shows up while the branch is
+# still being worked on rather than at merge time. build-and-release.yml only
+# fires on version tags, so until now nothing tested a change before it shipped.
+#
+# `pull_request` is listed as well, but only fires usefully for PRs from forks:
+# for a branch in this repo the push event already covers it, and running both
+# would double every job. The `if` on each job enforces that.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # Supersede in-flight runs for the same branch/PR; a newer commit makes the
+  # older result irrelevant.
+  group: tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pc:
+    name: PC tests (${{ matrix.os }}, py${{ matrix.python-version }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Listed explicitly rather than as a cross product, because
+        # macos-latest is arm64 and actions/python-versions ships no arm64 build
+        # of 3.9 -- that cell could never pass, and as a required check it would
+        # block every merge. 3.9 (our minimum, per requires-python) is covered on
+        # Linux and Windows instead.
+        #
+        # All three OSes are here because the USB handoff genuinely differs by
+        # platform: Windows re-enumerates the chip at the same bus address where
+        # Linux does not. These jobs use a simulated device, but the surrounding
+        # code paths are still worth exercising per platform.
+        include:
+          - { os: ubuntu-latest, python-version: "3.9" }
+          - { os: ubuntu-latest, python-version: "3.12" }
+          - { os: windows-latest, python-version: "3.9" }
+          - { os: windows-latest, python-version: "3.12" }
+          - { os: macos-latest, python-version: "3.12" }
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # setuptools_scm derives the version from tags
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest
+
+      - name: Run PC tests
+        # Hardware tests are deselected by pyproject's addopts; no board needed.
+        # JUnit XML so the next step can report results on the run page instead
+        # of leaving them buried in a job log.
+        run: pytest -v --junitxml=junit-${{ matrix.os }}-py${{ matrix.python-version }}.xml
+
+      - name: Summarise results
+        # Runs even when the tests fail -- that is precisely when the summary is
+        # worth having. Pure stdlib so it behaves the same on all three runners.
+        if: always()
+        shell: python
+        run: |
+          import glob, os, xml.etree.ElementTree as ET
+
+          rows, failures, names = [], [], []
+          for path in sorted(glob.glob("junit-*.xml")):
+              root = ET.parse(path).getroot()
+              suites = root.iter("testsuite") if root.tag == "testsuites" else [root]
+              for s in suites:
+                  total = int(s.get("tests", 0))
+                  fail = int(s.get("failures", 0)) + int(s.get("errors", 0))
+                  skip = int(s.get("skipped", 0))
+                  rows.append((total - fail - skip, fail, skip, total, float(s.get("time", 0))))
+                  for case in s.iter("testcase"):
+                      cls = (case.get("classname") or "").replace(".", "/")
+                      name = f"{cls}::{case.get('name')}"
+                      bad = case.find("failure") is not None or case.find("error") is not None
+                      names.append(("FAIL" if bad else "ok", name))
+                      if bad:
+                          node = case.find("failure") if case.find("failure") is not None else case.find("error")
+                          failures.append((name, (node.get("message") or "").strip()[:300]))
+
+          passed = sum(r[0] for r in rows); failed = sum(r[1] for r in rows)
+          skipped = sum(r[2] for r in rows); seconds = sum(r[4] for r in rows)
+          verdict = "all green" if failed == 0 else f"{failed} failing"
+
+          out = []
+          out.append(f"## ${{ matrix.os }} / Python ${{ matrix.python-version }} — {verdict}\n")
+          out.append("| passed | failed | skipped | total | time |")
+          out.append("|---:|---:|---:|---:|---:|")
+          out.append(f"| {passed} | {failed} | {skipped} | {passed + failed + skipped} | {seconds:.1f}s |\n")
+
+          if failures:
+              out.append("### Failures\n")
+              for name, message in failures:
+                  out.append(f"**`{name}`**\n\n```\n{message}\n```\n")
+
+          out.append(f"<details><summary>All {len(names)} test cases</summary>\n")
+          current = None
+          for status, name in names:
+              path = name.split("::")[0]
+              if path != current:
+                  current = path
+                  out.append(f"\n**{path}**\n")
+              mark = "x" if status == "ok" else " "
+              out.append(f"- [{mark}] `{name.split('::', 1)[-1]}`")
+          out.append("\n</details>")
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write("\n".join(out) + "\n")
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: junit-*.xml
+          if-no-files-found: warn
+
+  lint:
+    name: Format check
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Pinned to the same versions .pre-commit-config.yaml uses. Installing
+      # unpinned drifts: black's formatting changes between releases, so CI and
+      # the commit hook disagreed and this job failed on code the hook had just
+      # accepted. One source of truth -- change both together.
+      - run: pip install "black==24.4.0" "isort==5.13.2"
+      # Scoped to the package and the tests on purpose. src/gui/ holds gigabytes
+      # of gitignored PyInstaller output on a dev machine, and walking it makes
+      # these take minutes; its sources were also never black-formatted, so
+      # including them here would fail on pre-existing code.
+      - name: black
+        run: black --check --line-length=120 src/k230_flash tests
+      - name: isort
+        run: isort --check-only --profile=black --line-length=120 src/k230_flash tests
+
+  hardware:
+    name: Hardware tests (self-hosted rig)
+    # Opt-in only: needs a real K230 on a board-control rig, so it never runs on
+    # GitHub's shared runners. Point a self-hosted runner with the `k230-rig`
+    # label at a board and trigger this manually (or add a schedule).
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, k230-rig]
+    env:
+      # Configure these on the runner (repository variables or the runner env)
+      # rather than here, so the rig's wiring is not baked into the repo.
+      K230_TEST_PORT: ${{ vars.K230_TEST_PORT }}
+      K230_TEST_MEDIA: ${{ vars.K230_TEST_MEDIA }}
+      K230_BOARD_SCRIPTS: ${{ vars.K230_BOARD_SCRIPTS }}
+      K230_BOARD_NAME: ${{ vars.K230_BOARD_NAME }}
+      K230_OWNER: github-actions
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest
+
+      - name: Run hardware tests
+        # These overwrite the board's storage. --hardware opts in; without it the
+        # tests skip rather than fail.
+        run: pytest --hardware -m hardware -v
