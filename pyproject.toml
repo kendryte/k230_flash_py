@@ -38,6 +38,7 @@ k230_flash = ["loaders/*.bin"]       # Include your loaders/*.bin files
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"
 local_scheme = "node-and-date"
+fallback_version = "1.3.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

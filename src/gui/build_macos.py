@@ -203,7 +203,7 @@ def create_app_bundle():
             shutil.copy2(icon_src, icon_dst)
         
         # Get version info for Info.plist
-        version = os.environ.get('VERSION', '1.0.0')
+        version = os.environ.get('VERSION', '1.3.0')
         
         # Create Info.plist file
         info_plist = {
