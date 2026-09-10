@@ -88,11 +88,8 @@ jobs:
         # ubuntu/windows/macos; `arch` exists only so the two macOS jobs can be
         # told apart in artifact names.
         #
-        # macOS is built twice on purpose. macos-14 and later are Apple Silicon
-        # only, macos-13 is the last free Intel image, and nothing here builds
-        # universal2 binaries -- PyInstaller targets the host architecture. So
-        # simply "upgrading" macos-13 to macos-14 would have dropped Intel Macs
-        # without the artifact name changing to say so.
+        # Build each native architecture here; the signing Mac packages both
+        # without executing either app. No credentials are used in build jobs.
         include:
         - os: ubuntu-22.04
           label: ubuntu
@@ -102,10 +99,10 @@ jobs:
           label: windows
           arch: x86_64
           runner: windows-2022
-        - os: macos-13
+        - os: macos-15-intel
           label: macos
           arch: x86_64
-          runner: macos-13
+          runner: macos-15-intel
         - os: macos-14
           label: macos
           arch: arm64
@@ -117,6 +114,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -131,9 +130,14 @@ jobs:
 
       - name: Install macOS dependencies
         if: matrix.label == 'macos'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
         run: |
-          brew update
-          brew install libusb
+          # Avoid updating unrelated taps provided by the hosted runner image.
+          if ! brew list --versions libusb >/dev/null 2>&1; then
+            brew install libusb
+          fi
+          test -f "$(brew --prefix libusb)/lib/libusb-1.0.dylib"
 
 
       # Determine version
@@ -192,7 +196,19 @@ jobs:
           # Create version.txt file
           echo "$VERSION" > version.txt
           echo "Created version.txt with version: $VERSION"
-          python build_macos.py
+          python build_macos.py --app-only
+          mkdir -p ../../macos-staging
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/K230FlashGUI.app ../../macos-staging/app.zip
+
+      - name: Upload macOS app for signing
+        if: matrix.label == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-app-${{ matrix.arch }}
+          path: macos-staging/app.zip
+          if-no-files-found: error
+          compression-level: 0
 
       - name: Package GUI (Linux with Docker & FUSE)
         if: matrix.label == 'ubuntu'
@@ -460,14 +476,90 @@ jobs:
 
       # 上传 release
       - name: Upload GUI Release Asset
-        if: startsWith(github.ref, 'refs/tags/')
+        if: matrix.label != 'macos' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: upload/*
 
       - name: Upload GUI Nightly Artifact
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        if: matrix.label != 'macos' && !startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
           name: k230_flash_gui-${{ matrix.label }}-${{ matrix.arch }}-${{ env.VERSION }}
           path: upload/*
+
+  macos-release:
+    name: Sign and notarize macOS GUI (Intel and ARM64)
+    needs: gui-release
+    runs-on: [self-hosted, macOS, ARM64, shenzhen_mac]
+    environment: macos-signing
+    concurrency:
+      group: k230-flash-py-macos-signing
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install packaging Python
+        run: brew install python@3.12
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: macos-app-*
+          path: macos-input
+
+      - name: Sign, notarize, and staple release DMGs
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          MACOS_KEYCHAIN: ${{ secrets.MACOS_KEYCHAIN }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          MACOS_NOTARY_PROFILE: ${{ secrets.MACOS_NOTARY_PROFILE }}
+        run: |
+          set -euo pipefail
+          : "${MACOS_KEYCHAIN_PASSWORD:?Set MACOS_KEYCHAIN_PASSWORD in macos-signing}"
+          python_bin="$(brew --prefix python@3.12)/bin/python3.12"
+          version="${GITHUB_REF_NAME//\//-}-$(git rev-parse --short HEAD)"
+          work=$(mktemp -d "$RUNNER_TEMP/k230-flash-py-signing.XXXXXX")
+          echo "MACOS_SIGNING_WORK=$work" >> "$GITHUB_ENV"
+          echo "MACOS_RELEASE_DIR=$work/output" >> "$GITHUB_ENV"
+          echo "MACOS_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          for arch in x86_64 arm64; do
+            ditto -x -k "macos-input/macos-app-$arch/app.zip" "$work/$arch"
+            "$python_bin" src/gui/macos_release.py \
+              --app "$work/$arch/K230FlashGUI.app" \
+              --output "$work/output/k230_flash_gui-macos-$arch-$version.dmg"
+          done
+
+      - name: Upload signed macOS release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          files: |
+            ${{ env.MACOS_RELEASE_DIR }}/*.dmg
+            ${{ env.MACOS_RELEASE_DIR }}/*.sha256
+
+      - name: Upload signed macOS workflow artifacts
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: k230_flash_gui-macos-signed-${{ env.MACOS_RELEASE_VERSION }}
+          path: |
+            ${{ env.MACOS_RELEASE_DIR }}/*.dmg
+            ${{ env.MACOS_RELEASE_DIR }}/*.sha256
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Clean signing staging directory
+        if: always()
+        run: |
+          if [[ -n "${MACOS_SIGNING_WORK:-}" ]]; then
+            rm -rf "$MACOS_SIGNING_WORK"
+          fi

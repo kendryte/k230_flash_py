@@ -383,6 +383,69 @@ The AppImage is built inside `docker/Dockerfile.ubuntu2204` rather than natively
 on purpose: it has to link against an older glibc than a current dev box has, or
 it will not start on the distributions it targets.
 
+#### macOS signing and notarization
+
+Version-tag and manual workflow builds produce signed, notarized, and stapled
+DMGs for both Intel (`x86_64`) and Apple Silicon (`arm64`). Hosted runners build
+the native PyInstaller apps; a separate signing job runs on your self-hosted Mac
+with the labels `self-hosted`, `macOS`, `ARM64`, and `shenzhen_mac`. No
+application execution or Intel Python installation is needed on the signing Mac.
+
+Configure the `macos-signing` GitHub environment for this repository, restrict
+it to approved release tags and trusted branches used for manual builds, and
+give it these secrets:
+
+| Secret | Value |
+| --- | --- |
+| `MACOS_SIGN_IDENTITY` | Developer ID Application identity name or certificate SHA-1 |
+| `MACOS_KEYCHAIN` | Explicit absolute path to the keychain containing the identity and private key |
+| `MACOS_KEYCHAIN_PASSWORD` | Password for that keychain, not the Apple Account password |
+| `MACOS_NOTARY_PROFILE` | Name of the notarytool credentials profile stored in the same keychain |
+
+Use a dedicated release keychain where possible. The CI step unlocks it and
+configures its signing-key partition list for unattended codesign access.
+Passwords are never normalized or printed; remove accidental trailing newlines
+when setting secrets. Identity, path, and profile values tolerate trailing CR/LF.
+
+As the runner user on the Mac, store and verify the notarization credentials
+interactively (the tool prompts for your Apple Account credentials, team ID,
+and app-specific password):
+
+```bash
+xcrun notarytool store-credentials "K230Notary" --keychain "$MACOS_KEYCHAIN"
+xcrun notarytool history --keychain-profile "K230Notary" --keychain "$MACOS_KEYCHAIN"
+```
+
+Set `MACOS_NOTARY_PROFILE` to the profile name you used. Profiles and
+certificates must already exist on the signing Mac; adding GitHub secrets does
+not create them. Configure the secrets for this repository even if another
+repository uses the same runner.
+
+The packaging job signs nested code, notarizes and staples the app, then signs,
+notarizes, and staples the final DMG. It requires `Accepted` from Apple,
+validates both stapled tickets, and requires Gatekeeper assessment to accept
+both artifacts. Tag builds upload the DMG and its `.sha256` file directly to
+the GitHub Release; manual builds publish them as signed workflow artifacts.
+The checksum covers the final stapled DMG.
+The intermediate Actions `macos-app-*` artifacts are unsigned build inputs,
+not end-user downloads. The pure-Python wheel and sdist are unchanged.
+
+Local `./build.sh gui --venv` builds produce ad-hoc signed validation DMGs with
+`-unsigned` in their names. Gatekeeper does not trust these for distribution.
+To package a local app as a signed release, set the signing variables above and
+run on macOS:
+
+```bash
+python3 src/gui/macos_release.py \
+  --app src/gui/dist/K230FlashGUI.app \
+  --output upload/k230_flash_gui-macos-arm64-local.dmg
+```
+
+For local packaging only, `MACOS_KEYCHAIN_PASSWORD` may be omitted if the
+keychain is already unlocked and its private key permits unattended signing.
+`MACOS_NOTARY_PROFILE` is required by this release helper; a notarization
+failure never publishes a DMG. Use a new output filename when rerunning.
+
 ### Contributing
 
 1. Fork this repository.

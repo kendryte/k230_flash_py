@@ -5,6 +5,7 @@ macOS平台GUI打包脚本
 使用PyInstaller将k230_flash_gui打包为.app，然后创建dmg文件
 """
 
+import argparse
 import os
 import platform
 import plistlib
@@ -203,7 +204,7 @@ def create_app_bundle():
             shutil.copy2(icon_src, icon_dst)
         
         # Get version info for Info.plist
-        version = os.environ.get('VERSION', '1.3.0')
+        version = os.environ.get('VERSION', '1.4.0')
         
         # Create Info.plist file
         info_plist = {
@@ -233,6 +234,22 @@ def create_app_bundle():
         print(f"Error creating App Bundle: {e}")
         return False
 
+
+def adhoc_sign_app(app_path):
+    """Refresh and verify the local app signature after PyInstaller packaging."""
+    commands = [
+        ["codesign", "--force", "--deep", "--sign", "-", str(app_path)],
+        ["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app_path)],
+    ]
+    for command in commands:
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"{command[0]} failed:")
+            print(f"STDOUT: {result.stdout}")
+            print(f"STDERR: {result.stderr}")
+            return False
+    return True
+
 def create_dmg():
     """Create DMG installer package"""
     print("=== Creating DMG installer package ===")
@@ -240,6 +257,9 @@ def create_dmg():
     app_path = Path("dist/K230FlashGUI.app")
     if not app_path.exists():
         print("Error: Application bundle not found")
+        return False
+    if not adhoc_sign_app(app_path):
+        print("Error: Failed to create a valid ad-hoc app signature")
         return False
     
     # Get version information - prefer environment variable, fallback to git
@@ -266,7 +286,7 @@ def create_dmg():
     # silently overwrite each other in the release, leaving users no way to tell
     # which one they downloaded.
     arch = platform.machine()  # x86_64 on Intel, arm64 on Apple Silicon
-    dmg_name = f"k230_flash_gui-macos-{arch}-{version}.dmg"
+    dmg_name = f"k230_flash_gui-macos-{arch}-{version}-unsigned.dmg"
     dmg_path = output_dir / dmg_name
     
     # Delete existing dmg file
@@ -281,7 +301,7 @@ def create_dmg():
         temp_dmg_dir.mkdir()
         
         # Copy application to temporary directory
-        shutil.copytree(app_path, temp_dmg_dir / "K230FlashGUI.app")
+        shutil.copytree(app_path, temp_dmg_dir / "K230FlashGUI.app", symlinks=True)
         
         # Create Applications symbolic link
         applications_link = temp_dmg_dir / "Applications"
@@ -318,6 +338,9 @@ def create_dmg():
 
 def main():
     """Main function"""
+    parser = argparse.ArgumentParser(description="Build the macOS GUI")
+    parser.add_argument("--app-only", action="store_true", help="Build the app for a separate signing job")
+    args = parser.parse_args()
     print("K230 Flash GUI - macOS Build Script")
     print("=" * 50)
     
@@ -330,7 +353,7 @@ def main():
     if not create_app_bundle():
         sys.exit(1)
     
-    if not create_dmg():
+    if not args.app_only and not create_dmg():
         sys.exit(1)
     
     print("\n=== macOS build completed ===")

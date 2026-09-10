@@ -14,6 +14,18 @@ CONFIG_FILE = "config.ini"
 HELP_FILE = "flash-python-gui.pdf"
 APP_NAME = "k230_flash_gui"
 LOG_FILE_NAME = "k230_flash.log"
+DEFAULT_CONFIG = {
+    "General": {
+        "language": "zh",
+        "last_image_path": "",
+    },
+    "AdvancedSettings": {
+        "log_level": "INFO",
+        "custom_loader": "",
+        "auto_reboot": "False",
+        "loader_address": "0x80360000",
+    },
+}
 
 
 # -------------------------
@@ -272,6 +284,18 @@ def load_config():
         config.read(config_path, encoding="utf-8")
     else:
         logger.warning("未找到 config.ini，创建默认配置")
+
+    config_updated = False
+    for section, options in DEFAULT_CONFIG.items():
+        if not config.has_section(section):
+            config.add_section(section)
+            config_updated = True
+        for option, value in options.items():
+            if not config.has_option(section, option):
+                config.set(section, option, value)
+                config_updated = True
+
+    if config_updated:
         save_config(config)
 
     return config

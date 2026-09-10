@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented in this file.
 
+## 1.4.0 - 2026-09-10
+
+### Added
+
+- Added Developer ID signing, notarization, and ticket stapling for Intel and
+  Apple Silicon macOS GUI release DMGs using a self-hosted signing runner.
+- Added SHA-256 checksums for the final stapled DMGs and packaging regression
+  tests for signing order, notarization failures, and symlink handling.
+- Documented macOS signing secrets and notarization profile setup.
+
+### Changed
+
+- Updated the Intel macOS build runner to `macos-15-intel`.
+- Separated unsigned intermediate macOS apps from signed release assets and
+  labeled local and manual branch DMG builds as unsigned.
+- Routed manual macOS workflow builds through the Developer ID signing and
+  notarization job instead of publishing unsigned validation DMGs.
+
+### Fixed
+
+- Preserved application bundle symlinks when staging unsigned DMGs.
+- Added Gatekeeper assessment for final notarized DMGs and refreshed ad-hoc
+  signatures for local macOS validation packages.
+- Repaired missing GUI configuration sections and defaults at startup,
+  preventing first-launch failures on macOS and other platforms.
+- Made workflow and GUI configuration tests portable across UTF-8 and minimal
+  cross-platform CI environments.
+
 ## 1.3.0
 
 ### Added
@@ -56,6 +84,7 @@ All notable changes to this project are documented in this file.
 
 - Added the missing GUI PyInstaller specification.
 
+[1.4.0]: https://github.com/kendryte/k230_flash_py/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/kendryte/k230_flash_py/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/kendryte/k230_flash_py/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/kendryte/k230_flash_py/releases/tag/v1.1.0
